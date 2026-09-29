@@ -178,6 +178,11 @@ docker/run-tests.sh tests/test_export.py -k lane
 - The card has no build step. Check it in headless Chromium with fake data
   (never real locations in screenshots); headless Chromium doesn't
   reproduce OSM's referrer blocking, so test tiles in a real browser too.
+- README screenshots: `scripts/screenshots/render.sh` renders
+  `docs/images/card-*.png` from `demo.html` — made-up people in London —
+  in headless Chromium (2×, cropped, pngquant). Re-run it after visible
+  card changes. The README uses absolute `github.com/…/raw/main/…` image
+  URLs because HACS can't resolve relative ones.
 - Versions: SemVer; `manifest.json` is the source of truth, the card's
   `VERSION` must match (tested). Releases are GitHub releases `vX.Y.Z`.
 - CI (`.github/workflows/ci.yml`): hassfest, HACS validation, pytest.

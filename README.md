@@ -18,6 +18,8 @@ GeoPulse stays the only place your location *history* lives: imported
 trackers only ever hold the current position, and their coordinates are
 kept out of Home Assistant's database by default.
 
+![Timeline card, side by side: paths and stays on the map, a chronological list of stays and trips, and a grouped "now" marker for two people at the same café](https://github.com/blauvster/ha-geopulse/raw/main/docs/images/card-light.png)
+
 > This is a community project, not affiliated with GeoPulse.
 
 ## Requirements
@@ -127,6 +129,8 @@ list of people — so they can shift when a friend starts or stops sharing.
 Set `colors` (or use *Colours* in the editor) to pin them; picking
 GeoPulse's colour again removes the override.
 
+<img src="https://github.com/blauvster/ha-geopulse/raw/main/docs/images/card-dark.png" alt="The same card stacked in a narrow column, dark theme" width="320" align="right">
+
 **One card, small or full screen.** With `layout: auto` the map and list
 sit side by side once the card is at least 700 px wide, and stack
 otherwise. In a **panel** view — or a **sections** view where you've set
@@ -151,6 +155,10 @@ your full location history and that of every friend sharing their timeline
 with you. By default that's **anyone who can log in to Home Assistant**. To
 limit it, pick users under *Configure → Settings → Timeline card viewers*;
 administrators are always allowed.
+
+<br clear="right">
+
+*Screenshots use made-up demo data.*
 
 ## Privacy and your data
 
