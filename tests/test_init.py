@@ -1,5 +1,7 @@
 """Smoke tests: the integration loads and unloads under HA's test harness."""
 
+from unittest.mock import MagicMock
+
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -7,7 +9,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.geopulse.const import CONF_BASE_URL, CONF_READ_TOKEN, DOMAIN
 
 
-async def test_setup_and_unload_entry(hass: HomeAssistant) -> None:
+async def test_setup_and_unload_entry(hass: HomeAssistant, mock_api: MagicMock) -> None:
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_BASE_URL: "http://geopulse.local", CONF_READ_TOKEN: "t"},

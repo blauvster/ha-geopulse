@@ -179,20 +179,31 @@ The actual model, and what v1 import is built around:
   it matters more now that history is deliberately GeoPulse-only (§4) —
   without this, frequent polling would mirror the same data into HA's own
   recorder DB, exactly what we're trying to avoid.
-- On creation, the integration calls
-  `entity_registry.async_update_entity_options(entity_id, "recorder", {"exclude": True})`
-  for every **imported** device_tracker (own-account and friend entities
-  alike), so polling never bloats the recorder DB with state-change rows.
-  This is the actual mechanism that keeps history GeoPulse-only, not a
-  side effect of some core default — treat it as required, not
-  best-effort, and confirm it actually lands on entity setup before
-  calling Phase 3 done (flagged as unverified against the current HA core
-  signature in §9).
-- **Default: excluded.** Per-entity opt-in to re-enable history via the
-  entity's standard "Exclude from recorder" advanced setting (existing HA
-  UI, not custom UI).
-- Note in user-facing docs: excluding from recorder also excludes from
-  Logbook and long-term statistics for that entity.
+- **Corrected 2026-09-29:** the mechanism an earlier draft named here —
+  `entity_registry.async_update_entity_options(entity_id, "recorder",
+  {"exclude": True})` — does nothing in HA core (checked against
+  2026.9.4). The recorder only honours its YAML `recorder: exclude:`
+  filter; the `recorder/entity_options` websocket just *reports* that
+  filter, and nothing reads a `recorder` registry option.
+- What the integration does instead: imported trackers use
+  `_unrecorded_attributes` (the supported per-entity mechanism core
+  integrations use) for `latitude`, `longitude`, `gps_accuracy`,
+  `altitude`, `speed` and `last_seen`. Coordinates and movement data never
+  reach the recorder DB — verified with a real recorder in
+  `tests/test_recorder.py` and in a live HA instance against production
+  GeoPulse.
+- The **zone state** (`home` / `not_home` / zone name), battery and
+  metadata *are* still recorded. So HA keeps a coarse presence history,
+  which also means Logbook and "arrived home" history keep working. Where
+  you were stays GeoPulse-only; whether you were home does not.
+- **Default: on.** A per-entry option ("Exclude imported trackers from the
+  recorder") switches to a tracker class that records everything.
+  `_unrecorded_attributes` is class-level, so this is per entry, not per
+  entity.
+- For full exclusion including zone state, users can add a YAML filter;
+  entity ids are all `device_tracker.geopulse_*`, so
+  `recorder: exclude: entity_globs: [device_tracker.geopulse_*]` works.
+  Document this in the README.
 
 ---
 
@@ -244,12 +255,14 @@ The actual model, and what v1 import is built around:
   blocking for the integration itself.
 - No documented rate limits found for GeoPulse's API — confirm the chosen
   poll interval is reasonable for a typical self-hosted instance.
-- Decide `unavailable` vs. last-known state behavior for imported
-  device_trackers when GeoPulse itself is unreachable.
-- Recorder-exclusion API (`entity_registry.async_update_entity_options`
-  with the `recorder` key) — confirm current behavior/signature against
-  the HA core version being targeted, as this is a lesser-documented
-  corner of the entity registry API.
+- ~~Decide `unavailable` vs. last-known state when GeoPulse is
+  unreachable~~ **Resolved:** trackers keep their last position for a
+  grace period of max(5 min, 3 poll intervals), then go unavailable.
+  Short outages don't cause zone exits (home → unavailable → home) that
+  would fire automations; longer ones don't pass a stale position off as
+  current.
+- ~~Recorder-exclusion API~~ **Resolved — it doesn't work;** see §6 for
+  what replaced it.
 
 ---
 

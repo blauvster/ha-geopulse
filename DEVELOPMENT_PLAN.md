@@ -36,9 +36,8 @@ progress across sessions.
 ## Phase 1 — GeoPulse API client (`api.py`) — done
 
 Thin async `aiohttp`-based wrapper around the endpoints confirmed in
-Plan.md §12. No HA-specific code here — independently testable (verified:
-`custom_components/geopulse/__init__.py` only imports `homeassistant`
-inside its functions, so `api.py` never pulls in HA at import time).
+Plan.md §12. `api.py` itself has no HA imports (the package `__init__.py`
+does, since Phase 3; tests always run with HA installed).
 
 - [x] `GeoPulseClient(session, base_url, token)` — one client per token;
       construct two instances (read token, export token) rather than a
@@ -126,7 +125,7 @@ configs and friends (the unique-ID source).
 - The export token can't be validated at setup: the only way to check it
   is to POST a real point to `/api/homeassistant`.
 
-## Phase 3 — Import (coordinator + device_tracker)
+## Phase 3 — Import (coordinator + device_tracker) — done
 
 Current position only — never history/trails. GeoPulse stays the sole
 source of truth for location history; HA only ever reflects "where is
@@ -137,18 +136,34 @@ ever calls `async_get_last_known_position`,
 two are Phase 5/card-only, already flagged as such in `api.py`'s
 docstrings).
 
-- [ ] `DataUpdateCoordinator` polling per Plan.md §4, one fetch per
-      configured import target per cycle
-- [ ] `device_tracker` entities: per-source-type, whole-account-aggregated,
-      and per-friend, per Plan.md §3/§4
-- [ ] Recorder exclusion on entity creation is **required, not
-      best-effort** (Plan.md §6 — corrected from an earlier draft that
-      wrongly assumed this was already the HA core default) — verify the
-      `async_update_entity_options` signature against the targeted HA
-      core version first (flagged as unverified in Plan.md §9), and treat
-      it as a blocking part of entity setup rather than a nice-to-have
-- [ ] Decide + implement unavailable-vs-last-known behavior when
-      GeoPulse is unreachable (open item in Plan.md §9)
+- [x] `GeoPulseCoordinator` (`TimestampDataUpdateCoordinator`): per poll,
+      `asyncio.gather` of only the selected targets — last-known position,
+      one call per source type, one `/api/friends` for all friends. Auth
+      errors → `ConfigEntryAuthFailed` (reauth), others → `UpdateFailed`.
+      First refresh failing → setup retry.
+- [x] `device_tracker` entities: `device_tracker.geopulse_account`,
+      `geopulse_<source type>`, `geopulse_<friend name>`. Unique IDs are
+      `<entry_id>_account|source_<type>|friend_<id>`. Attributes: battery,
+      gps_accuracy, altitude, speed, last_seen, geopulse_source (only
+      when non-null). Battery is a plain attribute — `battery_level` on
+      trackers is deprecated (removed in HA 2027.7). Deselected targets are
+      removed from the entity registry on reload.
+- [x] Recorder exclusion — **the planned mechanism doesn't exist in HA
+      core**; replaced by `_unrecorded_attributes`. See Plan.md §6.
+      Verified against a real recorder DB (`tests/test_recorder.py`) and a
+      live HA instance.
+- [x] Unavailable vs last-known: last-known for max(5 min, 3 polls), then
+      unavailable (Plan.md §9). Needed an entity-side timer: the
+      coordinator only notifies listeners on the *first* failure of a run,
+      so without it `available` was never re-checked and a stale position
+      would have shown forever.
+
+**End-to-end check (2026-09-29):** `docker/compose.dev.yml` runs the
+official HA 2026.9.4 image with the integration mounted read-only. Config
+flow driven over HA's REST API against production GeoPulse created all
+four trackers (account, Colota, two friends) and loaded cleanly; history
+API confirmed no coordinates recorded. Dev HA state and credentials live
+in `.ha-config/` (git-ignored).
 
 ## Phase 4 — Export
 
@@ -174,6 +189,15 @@ account's own history still needs research below.
 
 ## Phase 6 — Packaging & docs
 
+- [x] Brand icons in `custom_components/geopulse/brand/` (`icon`, `dark_icon`,
+      each at 256 px and `@2x` 512 px). HA 2026.9 serves a custom
+      integration's `brand/` folder locally before the brands CDN; `logo*`
+      fall back to the icons. Original artwork (teal pin with a pulse
+      line), deliberately not derived from GeoPulse's BSL-licensed logo.
+      Sources: `assets/icon.svg`, `assets/icon-dark.svg`; re-render with
+      `rsvg-convert -w 256 -h 256` (and 512 for `@2x`).
+- [ ] Optional: ask the GeoPulse maintainer about using the official logo
+      instead, once the integration is published.
 - [ ] README with setup instructions, screenshots
 - [ ] `hacs.json` validation, versioning scheme
 - [ ] License
@@ -182,5 +206,5 @@ account's own history still needs research below.
 
 ## Current status
 
-Phases 0–2 done; 42 tests passing in Docker (`docker/run-tests.sh`).
-Next: Phase 3 (coordinator + device_tracker).
+Phases 0–3 done; 58 tests passing in Docker (`docker/run-tests.sh`), and
+import verified end to end against production. Next: Phase 4 (export).

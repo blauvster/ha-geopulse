@@ -2,33 +2,44 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
-from .const import DOMAIN
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigEntry
-    from homeassistant.core import HomeAssistant
+from .api import GeoPulseClient
+from .const import CONF_BASE_URL, CONF_READ_TOKEN
+from .coordinator import GeoPulseCoordinator
 
-# Populated as each phase in DEVELOPMENT_PLAN.md lands: device_tracker (Phase 3).
-PLATFORMS: list[str] = []
-
-# homeassistant is only imported inside these functions, not at module level,
-# so that leaf modules with no HA dependency (api.py, const.py) can be
-# imported - and unit tested - without requiring the homeassistant package
-# to be installed at all. Real runtime callers (HA itself) always have it.
+PLATFORMS: list[Platform] = [Platform.DEVICE_TRACKER]
 
 
-async def async_setup_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
+@dataclass
+class GeoPulseRuntimeData:
+    """Per-entry runtime objects. Phase 4 adds the exporter here."""
+
+    coordinator: GeoPulseCoordinator
+
+
+type GeoPulseConfigEntry = ConfigEntry[GeoPulseRuntimeData]
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: GeoPulseConfigEntry) -> bool:
     """Set up GeoPulse from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
+    client = GeoPulseClient(
+        async_get_clientsession(hass), entry.data[CONF_BASE_URL], entry.data[CONF_READ_TOKEN]
+    )
+    coordinator = GeoPulseCoordinator(hass, entry, client)
+    # Raises ConfigEntryNotReady / ConfigEntryAuthFailed on failure, which HA
+    # turns into setup retry / reauth.
+    await coordinator.async_config_entry_first_refresh()
+    entry.runtime_data = GeoPulseRuntimeData(coordinator=coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
-async def async_unload_entry(hass: "HomeAssistant", entry: "ConfigEntry") -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: GeoPulseConfigEntry) -> bool:
     """Unload a config entry."""
-    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if unloaded:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-    return unloaded
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

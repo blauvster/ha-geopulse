@@ -1,0 +1,15 @@
+# Dev Home Assistant with this integration mounted live.
+#   docker compose -f docker/compose.dev.yml up -d
+# UI on http://<host>:8123. Config/state lives in .ha-config/ (git-ignored).
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2026.9.4
+    container_name: geopulse-ha-dev
+    volumes:
+      - ../.ha-config:/config
+      - ../custom_components/geopulse:/config/custom_components/geopulse:ro
+    ports:
+      - "8123:8123"
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
