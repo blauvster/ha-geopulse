@@ -1,0 +1,113 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to GeoPulse",
+        "description": "Enter your GeoPulse server and a user API token (GeoPulse → Settings → API Tokens). The token has full access to your GeoPulse account.",
+        "data": {
+          "base_url": "GeoPulse URL",
+          "read_token": "API token"
+        }
+      },
+      "import_selection": {
+        "title": "Import from GeoPulse",
+        "description": "Choose what to bring into Home Assistant as device trackers. Only the current position is imported; history stays in GeoPulse.\n\nGeoPulse can't tell apart two devices that use the same source type (for example two phones both on OwnTracks), so they appear as one tracker for that type. Friends are listed only if they share their live location with you.",
+        "data": {
+          "import_aggregate_account": "Whole account (latest position from any source)",
+          "import_source_types": "Per source type",
+          "import_friend_ids": "Friends"
+        }
+      },
+      "export_selection": {
+        "title": "Export to GeoPulse",
+        "description": "Choose Home Assistant device trackers to send to GeoPulse. Trackers created by this integration aren't offered. Exporting needs a Home Assistant location source token (GeoPulse → Settings → Location Sources → Add New Source → Home Assistant); you can also add it later from the integration's options.",
+        "data": {
+          "export_entities": "Device trackers to export",
+          "export_token": "Home Assistant location source token",
+          "export_retry_queue": "Queue and retry failed uploads"
+        }
+      },
+      "export_device_ids": {
+        "title": "Export device IDs",
+        "description": "GeoPulse tells exported devices apart by device ID. Each defaults to the entity ID."
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate GeoPulse",
+        "description": "The API token for {base_url} was rejected. Enter a new token for the same GeoPulse account.",
+        "data": {
+          "read_token": "API token"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Enter a full http:// or https:// URL.",
+      "invalid_auth": "GeoPulse rejected the API token.",
+      "cannot_connect": "Couldn't reach GeoPulse at that URL.",
+      "unknown": "Unexpected error; check the Home Assistant logs.",
+      "export_token_required": "A location source token is needed to export device trackers.",
+      "nothing_selected": "Select at least one thing to import or export.",
+      "device_id_required": "Device ID can't be empty.",
+      "duplicate_device_id": "Each exported tracker needs a different device ID."
+    },
+    "abort": {
+      "already_configured": "This GeoPulse account is already set up.",
+      "reauth_successful": "Re-authentication was successful.",
+      "wrong_account": "That token belongs to a different GeoPulse account."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "GeoPulse options",
+        "menu_options": {
+          "import_selection": "Import selection",
+          "export_selection": "Export selection",
+          "settings": "Settings"
+        }
+      },
+      "import_selection": {
+        "title": "Import from GeoPulse",
+        "description": "Only the current position is imported; history stays in GeoPulse. Devices sharing a source type appear as one tracker for that type.",
+        "data": {
+          "import_aggregate_account": "Whole account (latest position from any source)",
+          "import_source_types": "Per source type",
+          "import_friend_ids": "Friends"
+        }
+      },
+      "export_selection": {
+        "title": "Export to GeoPulse",
+        "description": "Leave the token blank to keep the one already saved.",
+        "data": {
+          "export_entities": "Device trackers to export",
+          "export_token": "Home Assistant location source token",
+          "export_retry_queue": "Queue and retry failed uploads"
+        }
+      },
+      "export_device_ids": {
+        "title": "Export device IDs",
+        "description": "GeoPulse tells exported devices apart by device ID."
+      },
+      "settings": {
+        "title": "Settings",
+        "data": {
+          "poll_interval": "Poll interval",
+          "recorder_exclude": "Exclude imported trackers from the recorder"
+        },
+        "data_description": {
+          "recorder_exclude": "Keeps GeoPulse the only store of location history. Excluded entities also don't appear in the logbook or long-term statistics."
+        }
+      }
+    },
+    "error": {
+      "export_token_required": "A location source token is needed to export device trackers.",
+      "nothing_selected": "Select at least one thing to import or export.",
+      "device_id_required": "Device ID can't be empty.",
+      "duplicate_device_id": "Each exported tracker needs a different device ID."
+    },
+    "abort": {
+      "invalid_auth": "GeoPulse rejected the API token; re-authenticate the integration first.",
+      "cannot_connect": "Couldn't reach GeoPulse.",
+      "unknown": "Unexpected error; check the Home Assistant logs."
+    }
+  }
+}

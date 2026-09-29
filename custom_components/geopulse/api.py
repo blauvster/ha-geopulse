@@ -50,6 +50,7 @@ class GpsSourceConfig:
     type: str
     device_id: str | None
     active: bool
+    user_id: str | None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GpsSourceConfig":
@@ -58,6 +59,7 @@ class GpsSourceConfig:
             type=data["type"],
             device_id=data.get("deviceId"),
             active=data.get("active", False),
+            user_id=data.get("userId"),
         )
 
 
@@ -96,7 +98,9 @@ class Friend:
     """A friend with an existing accepted friendship (backend FriendInfoDTO)."""
 
     friend_id: str
+    user_id: str | None
     full_name: str | None
+    email: str | None
     last_latitude: float | None
     last_longitude: float | None
     last_battery: float | None
@@ -107,7 +111,9 @@ class Friend:
     def from_dict(cls, data: dict[str, Any]) -> "Friend":
         return cls(
             friend_id=data["friendId"],
+            user_id=data.get("userId"),
             full_name=data.get("fullName"),
+            email=data.get("email"),
             last_latitude=data.get("lastLatitude"),
             last_longitude=data.get("lastLongitude"),
             last_battery=data.get("lastBattery"),
@@ -190,8 +196,13 @@ class GeoPulseClient:
                 if response.status == 204:
                     return None
                 return await response.json()
-        except ClientError as err:
-            raise GeoPulseApiError(f"Error communicating with GeoPulse: {err}") from err
+        except (ClientError, TimeoutError) as err:
+            # aiohttp's total-request timeout raises a bare TimeoutError, not a
+            # ClientError subclass, so it has to be caught separately.
+            raise GeoPulseApiError(f"Error communicating with GeoPulse: {err!r}") from err
+        except ValueError as err:
+            # JSON content type but an undecodable body.
+            raise GeoPulseApiError(f"Invalid JSON from GeoPulse for {path}") from err
 
     async def _request_enveloped(
         self, method: str, path: str, **kwargs: Any
@@ -199,6 +210,8 @@ class GeoPulseClient:
         payload = await self._request(method, path, **kwargs)
         if payload is None:
             return None
+        if not isinstance(payload, dict):
+            raise GeoPulseApiError(f"Unexpected response shape for {path}")
         if payload.get("status") != "success":
             raise GeoPulseApiError(payload.get("message") or f"GeoPulse error for {path}")
         return payload.get("data")
@@ -206,6 +219,8 @@ class GeoPulseClient:
     async def async_get_source_configs(self) -> list[GpsSourceConfig]:
         """List the account's GPS source configs. Raw list, no envelope."""
         data = await self._request("GET", API_PATH_GPS_SOURCE)
+        if not isinstance(data, list):
+            raise GeoPulseApiError(f"Unexpected response shape for {API_PATH_GPS_SOURCE}")
         return [GpsSourceConfig.from_dict(item) for item in data]
 
     async def async_get_last_known_position(self) -> GpsPoint | None:

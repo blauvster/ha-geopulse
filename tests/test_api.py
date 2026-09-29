@@ -8,12 +8,14 @@ signature) - hitting a real, if tiny, HTTP server sidesteps that version
 coupling entirely.
 """
 
+import asyncio
 from datetime import datetime, timezone
 
 import pytest
-from aiohttp import web
+from aiohttp import ClientTimeout, web
 from aiohttp.test_utils import TestClient, TestServer
 
+from custom_components.geopulse import api
 from custom_components.geopulse.api import (
     GeoPulseApiError,
     GeoPulseAuthError,
@@ -21,6 +23,11 @@ from custom_components.geopulse.api import (
 )
 
 TOKEN = "test-token"
+
+# pytest-homeassistant-custom-component blocks sockets by default; opt in
+# the same way HA core's own hass_client fixture does. Connections are still
+# restricted to 127.0.0.1 by the plugin's socket_allow_hosts.
+pytestmark = pytest.mark.usefixtures("socket_enabled")
 
 
 class FakeGeoPulseServer:
@@ -314,6 +321,47 @@ async def test_401_raises_auth_error(geopulse_server):
 async def test_500_raises_api_error(geopulse_server):
     async def handler(request: web.Request) -> web.Response:
         return web.Response(status=500, text="boom")
+
+    geopulse_server.route("GET", "/api/gps/source/", handler)
+    client, test_client = await make_client(geopulse_server)
+    try:
+        with pytest.raises(GeoPulseApiError):
+            await client.async_get_source_configs()
+    finally:
+        await test_client.close()
+
+
+async def test_timeout_raises_api_error(geopulse_server, monkeypatch):
+    async def handler(request: web.Request) -> web.Response:
+        await asyncio.sleep(1)
+        return web.json_response([])
+
+    monkeypatch.setattr(api, "REQUEST_TIMEOUT", ClientTimeout(total=0.05))
+    geopulse_server.route("GET", "/api/gps/source/", handler)
+    client, test_client = await make_client(geopulse_server)
+    try:
+        with pytest.raises(GeoPulseApiError):
+            await client.async_get_source_configs()
+    finally:
+        await test_client.close()
+
+
+async def test_invalid_json_raises_api_error(geopulse_server):
+    async def handler(request: web.Request) -> web.Response:
+        return web.Response(text="{not json", content_type="application/json")
+
+    geopulse_server.route("GET", "/api/gps/source/", handler)
+    client, test_client = await make_client(geopulse_server)
+    try:
+        with pytest.raises(GeoPulseApiError):
+            await client.async_get_source_configs()
+    finally:
+        await test_client.close()
+
+
+async def test_unexpected_shape_raises_api_error(geopulse_server):
+    async def handler(request: web.Request) -> web.Response:
+        return web.json_response({"status": "success", "data": []})
 
     geopulse_server.route("GET", "/api/gps/source/", handler)
     client, test_client = await make_client(geopulse_server)

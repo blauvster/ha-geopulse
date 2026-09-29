@@ -38,7 +38,30 @@ CONF_EXPORT_TOKEN = "export_token"
 CONF_IMPORT_SOURCE_TYPES = "import_source_types"
 CONF_IMPORT_AGGREGATE_ACCOUNT = "import_aggregate_account"
 CONF_IMPORT_FRIEND_IDS = "import_friend_ids"
+# {entity_id: device_id} - device_id is the payload field GeoPulse uses to
+# tell exported devices apart; defaults to the entity_id (Plan.md §3).
 CONF_EXPORT_ENTITIES = "export_entities"
+CONF_EXPORT_RETRY_QUEUE = "export_retry_queue"
 CONF_POLL_INTERVAL = "poll_interval"
+CONF_RECORDER_EXCLUDE = "recorder_exclude"
 
 DEFAULT_POLL_INTERVAL_SECONDS = 45
+MIN_POLL_INTERVAL_SECONDS = 10
+MAX_POLL_INTERVAL_SECONDS = 3600
+
+# Display names for the import picker, keyed by GpsSourceType.
+SOURCE_TYPE_LABELS = {
+    SOURCE_TYPE_OWNTRACKS: "OwnTracks",
+    SOURCE_TYPE_GPSLOGGER: "GPSLogger",
+    SOURCE_TYPE_OVERLAND: "Overland",
+    SOURCE_TYPE_TRACCAR: "Traccar",
+    SOURCE_TYPE_GOOGLE_TIMELINE: "Google Timeline",
+    SOURCE_TYPE_GPX: "GPX",
+    SOURCE_TYPE_DAWARICH: "Dawarich",
+    SOURCE_TYPE_HOME_ASSISTANT: "Home Assistant",
+    SOURCE_TYPE_GEOJSON: "GeoJSON",
+    SOURCE_TYPE_CSV: "CSV",
+    SOURCE_TYPE_COLOTA: "Colota",
+    SOURCE_TYPE_MANUAL: "Manual",
+    SOURCE_TYPE_MOBILE_APP: "Mobile app",
+}

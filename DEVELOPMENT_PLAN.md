@@ -55,7 +55,7 @@ inside its functions, so `api.py` never pulls in HA at import time).
 - [x] `async_post_homeassistant_location(...)`
 - [x] `GeoPulseAuthError` on 401 (→ `ConfigEntryAuthFailed` upstream) and
       `GeoPulseApiError` on other failures
-- [x] Unit tests (`tests/test_api.py`, 10 passing) against a real
+- [x] Unit tests (`tests/test_api.py`, 13 passing) against a real
       `aiohttp.web` test server rather than `aioresponses` — that library
       (0.7.9, its latest release) monkeypatches `ClientResponse` in a way
       that's broken against aiohttp >=3.10's constructor signature, which
@@ -63,33 +63,60 @@ inside its functions, so `api.py` never pulls in HA at import time).
       server sidesteps the version coupling entirely and was barely more
       code.
 
-**Windows testing note:** `pytest-homeassistant-custom-component` (and
-`homeassistant` itself, via `homeassistant.runner`) imports the stdlib
-`fcntl` module at import time, which doesn't exist on Windows — it's
-POSIX-only. This means Phase 2 onward, once tests depend on that plugin
-for config-flow/coordinator/entity fixtures, **this dev machine can't run
-them natively**. `api.py`'s own tests (Phase 1, pure `aiohttp`, no HA
-import) are unaffected and pass locally. Options once Phase 2 needs real
-HA test fixtures: run pytest inside WSL2, a Linux devcontainer, or CI
-(GitHub Actions `ubuntu-latest`) — this is a common constraint for HA
-custom-component development on Windows, not specific to this project.
+**Test environment:** development moved to a Debian LXC; tests run in
+Docker via `docker/run-tests.sh` (image: `docker/Dockerfile.test`,
+Python 3.14, `homeassistant` 2026.9.4, `pytest-homeassistant-custom-component`
+0.13.367). This replaces the old Windows setup, where the HA plugin couldn't
+load (`fcntl` is POSIX-only). Enabling the plugin surfaced two things:
+- The plugin blocks sockets, so `test_api.py` opts in via
+  `pytestmark = usefixtures("socket_enabled")` (same as HA core's
+  `hass_client`; still limited to 127.0.0.1).
+- `manifest.json` declared `config_flow: true` with no `config_flow.py`, so
+  HA refused to set up any entry. Fixed in Phase 2; `tests/test_init.py`
+  guards it.
+- `api.py` let aiohttp's total-timeout `TimeoutError` (not a
+  `ClientError`) escape as an unhandled exception. Now mapped to
+  `GeoPulseApiError`, along with undecodable JSON and wrong-shaped payloads.
 
-## Phase 2 — Config flow
+## Phase 2 — Config flow — done
 
-- [ ] Step 1 (Connection): base URL + read token, validated with a live
-      `get_source_configs()` call
-- [ ] Step 2 (Import selection): list source *types* present on the
-      account (excluding `HOME_ASSISTANT`) + friends with
-      `friendSharesLiveLocation`; per Plan.md §3, multiple devices
-      sharing one source type collapse into a single entity — surface
-      that in the step's UI copy so it isn't a silent surprise
-- [ ] Step 3 (Export selection): existing `device_tracker` entities not
-      owned by this config entry; optional HA Location Source token
-      (can be added later via Options)
-- [ ] Options flow: add/remove import or export entities, poll interval,
-      recorder-exclusion toggle
-- [ ] Reauth flow on `GeoPulseAuthError`
-- [ ] Config flow tests (`pytest-homeassistant-custom-component`)
+- [x] Step 1 (Connection): base URL + read token, validated with live
+      `get_source_configs()` + `get_friends()` calls. URL is normalized
+      (trailing slash/query dropped, http/https only).
+- [x] Step 2 (Import selection): whole-account toggle (default on),
+      source types present on the account (excluding `HOME_ASSISTANT`,
+      deduped), friends with `friendSharesLiveLocation`. The collapse
+      limitation is stated in the step description. Empty pickers are hidden.
+- [x] Step 3 (Export selection): `device_tracker` entities, excluding every
+      entity registered under the `geopulse` platform; optional HA
+      Location Source token (required only if something is selected)
+- [x] Step 4 (Export device IDs): one field per exported entity, defaulting
+      to the entity_id; empty/duplicate IDs rejected
+- [x] Options flow (`OptionsFlowWithReload`, menu): import selection,
+      export selection (blank token keeps the stored one; a token-only
+      change schedules a reload itself, since options are unchanged),
+      settings (poll interval 10–3600s, recorder exclusion)
+- [x] Reauth flow (`reauth_confirm`); aborts `wrong_account` if the new
+      token belongs to a different account
+- [x] Config flow tests: 28 in `tests/test_config_flow.py`, including one
+      driving the flow through HA's HTTP API (the frontend's path) so
+      selector serialization is covered
+
+**Decisions made here:**
+- `entry.data` holds `base_url`, `read_token`, `export_token`;
+  `entry.options` holds all selections/settings. `export_entities` is
+  `{entity_id: device_id}`.
+- Unique ID is the account's `userId`. There's no "who am I" endpoint on
+  the API-token surface, but every source config and friendship row
+  carries it. An account with neither falls back to the base URL; reauth
+  upgrades such an entry to the real `userId` once it's visible.
+- The retry queue is one per-entry toggle (default on), not per entity as
+  Plan.md §3 suggests; per-entity added UI with no clear use case. Easy to
+  split later since it's only read in Phase 4.
+- Recorder exclusion is one per-entry default applied at entity creation
+  (Phase 3); per-entity overrides use HA's standard entity setting (§6).
+- The export token can't be validated at setup: the only way to check it
+  is to POST a real point to `/api/homeassistant`.
 
 ## Phase 3 — Import (coordinator + device_tracker)
 
@@ -147,4 +174,5 @@ account's own history still needs research below.
 
 ## Current status
 
-Starting Phase 0 now.
+Phases 0–2 done; 42 tests passing in Docker (`docker/run-tests.sh`).
+Next: Phase 3 (coordinator + device_tracker).
