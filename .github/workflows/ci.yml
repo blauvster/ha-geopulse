@@ -16,7 +16,17 @@ jobs:
   hacs:
     runs-on: ubuntu-latest
     steps:
-      - uses: hacs/action@main
+      # HACS only supports public repositories, and its validator can't read
+      # a private repo's files ("expected a dictionary. Got None"). Skip it
+      # until the repo is public rather than failing every run.
+      - id: visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "private=$(gh api "repos/${{ github.repository }}" --jq .private)" >> "$GITHUB_OUTPUT"
+      - if: steps.visibility.outputs.private == 'true'
+        run: echo "::notice::Skipping HACS validation - HACS only supports public repositories."
+      - if: steps.visibility.outputs.private != 'true'
+        uses: hacs/action@main
         with:
           category: integration
           # Brand images ship in custom_components/geopulse/brand/, which
