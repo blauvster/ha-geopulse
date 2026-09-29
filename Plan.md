@@ -239,32 +239,40 @@ The actual model, and what v1 import is built around:
 
 ## 7. Custom Lovelace Card
 
-- Renders both an interactive **map** (path/route for a selected date
-  range) and a **timeline list** (stays & trips, similar to GeoPulse's own
-  timeline view) in one card.
-- This is where the history/trail endpoints from §12 that the coordinator
-  deliberately never touches actually get used: `/api/friends/location/
-  trails` and `/api/friends/{friendId}/location` for a friend's path, and
-  `/api/streaming-timeline` (still unresearched, see §9) for the account's
-  own stays/trips and presumably its own point-path equivalent.
-- Queries GeoPulse's REST API **live**, on demand, for whatever date range
-  the user picks — does not rely on HA's recorder/history (consistent
-  with excluding these entities from the recorder, per §6).
-- Needs a safe path to the GeoPulse API token from frontend JS. Preferred
-  approach: the integration exposes a backend proxy (HA websocket API
-  command or REST endpoint under `/api/geopulse/...`) that the card calls,
-  keeping the raw API token server-side rather than embedded in frontend
-  code.
+**Built (Phase 5).** `custom:geopulse-card` shows a map and a stay/trip
+list for a date range, for the account owner and every friend sharing
+their timeline, each in the colour GeoPulse assigns.
+
+- **Data:** `GET /api/streaming-timeline/multi-user?startTime&endTime`
+  (§12) — one call returns every visible person's stays, trips, data
+  gaps and map path segments. Queried live, on demand; nothing is cached
+  or recorded in HA (consistent with §4/§6).
+- **Backend proxy:** websocket command `geopulse/timeline {start_date,
+  end_date, entry_id?}`. The read token stays server-side. **Admin-only**,
+  because that token grants full access to the GeoPulse account (§9).
+  Dates are whole days in HA's time zone, resolved server-side; ranges
+  are capped at 31 days. The response is trimmed to what the card draws
+  (`[lat, lng]` path points, a few fields per stay/trip): ~13× smaller
+  than GeoPulse's raw payload (29 KiB vs ~380 KiB for a day of 3 people).
+- **Map:** Leaflet 1.9.4, vendored (no CDN). OpenStreetMap raster tiles
+  by default — CARTO basemaps now return "API key required" placeholder
+  tiles, and HA's own frontend moved to vector tiles (MapLibre), too heavy
+  to vendor. Dark mode dims OSM tiles with a CSS filter. `tile_url` /
+  `tile_attribution` point it at another raster tile server.
+- **Security:** location names etc. are rendered with `textContent` /
+  escaped tooltips, never raw HTML.
 
 ---
 
 ## 8. Distribution
 
-- Single HACS custom repository:
-  - `custom_components/geopulse/` — the integration
-  - `www/geopulse-card.js` — the Lovelace card
-  - `hacs.json` declaring both
-- License, versioning, README/docs: TBD before first release.
+- Single HACS repository of type **integration**
+  (`custom_components/geopulse/`). The card ships *inside* the
+  integration (`custom_components/geopulse/frontend/`) and is registered
+  on every dashboard automatically (`add_extra_js_url`), because HACS
+  can't install one repository as both an integration and a dashboard
+  plugin. This replaces the original `www/geopulse-card.js` idea.
+- License, versioning, README/docs: see Phase 6.
 
 ---
 
@@ -323,8 +331,10 @@ and return the envelope `{"status": "success"|"error", "message": str|null,
 `OWNTRACKS, GPSLOGGER, OVERLAND, TRACCAR, GOOGLE_TIMELINE, GPX, DAWARICH,
 HOME_ASSISTANT, GEOJSON, CSV, COLOTA, MANUAL, MOBILE_APP`.
 
-Not yet researched (defer to card-building phase): `/api/streaming-timeline`
-and related stays/trips endpoints for §7's Lovelace card.
+| *(card only)* Timelines for owner + sharing friends | `GET /api/streaming-timeline/multi-user?startTime=<ISO>&endTime=<ISO>[&userIds=a,b]` | `data` is `MultiUserTimelineDTO`: `{requestingUserId, timelines: [{userId, fullName, email, avatar, assignedColor, timeline: {stays, trips, dataGaps}, pathSegments: [[GpsPointPathPointDTO]], stats}]}`. Without `userIds`: the requester plus every friend who shares their timeline. Stay: `timestamp, stayDuration (s), latitude, longitude, locationName, city, country`. Trip: `timestamp, tripDuration (s), distanceMeters, movementType (WALK, RUNNING, BICYCLE, CAR, MOTORCYCLE, TRAIN, FLIGHT, BOAT, UNKNOWN), latitude/longitude → endLatitude/endLongitude`. Gap: `startTime, endTime, durationSeconds`. Live-verified 2026-09-29. |
+
+(Single-user equivalents: `GET /api/streaming-timeline` and
+`GET /api/gps/path` — not used; multi-user covers both.)
 
 ---
 

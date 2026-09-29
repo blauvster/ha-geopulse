@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
@@ -17,11 +19,14 @@ from .const import (
     CONF_EXPORT_ENTITY_TOKENS,
     CONF_EXPORT_RETRY_QUEUE,
     CONF_READ_TOKEN,
+    DOMAIN,
 )
 from .coordinator import GeoPulseCoordinator
 from .export import STORAGE_VERSION, GeoPulseExporter, storage_key
+from .timeline import async_register_card, async_register_websocket
 
 PLATFORMS: list[Platform] = [Platform.DEVICE_TRACKER]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 @dataclass
@@ -33,6 +38,15 @@ class GeoPulseRuntimeData:
 
 
 type GeoPulseConfigEntry = ConfigEntry[GeoPulseRuntimeData]
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the card backend once, independent of config entries."""
+    async_register_websocket(hass)
+    # Always true in a real HA (default_config); skipped in minimal test setups.
+    if "frontend" in hass.config.components and hass.http is not None:
+        await async_register_card(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GeoPulseConfigEntry) -> bool:

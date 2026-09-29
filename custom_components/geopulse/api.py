@@ -26,6 +26,7 @@ from .const import (
     API_PATH_GPS_POINTS,
     API_PATH_GPS_SOURCE,
     API_PATH_HOMEASSISTANT_INGEST,
+    API_PATH_MULTI_USER_TIMELINE,
 )
 
 REQUEST_TIMEOUT = ClientTimeout(total=15)
@@ -306,6 +307,29 @@ class GeoPulseClient:
             friend_id: [FriendPoint.from_dict(point) for point in points]
             for friend_id, points in (data or {}).items()
         }
+
+    async def async_get_multi_user_timeline(
+        self, start: datetime, end: datetime
+    ) -> dict[str, Any]:
+        """Timelines for the token owner and every friend sharing theirs.
+
+        Card use only (Plan.md §7) - history is fetched live and on demand,
+        never polled or stored in HA. Returns the raw MultiUserTimelineDTO:
+        {requestingUserId, timelines: [{userId, fullName, assignedColor,
+        timeline: {stays, trips, dataGaps}, pathSegments, stats}], ...}.
+        """
+
+        def iso(value: datetime) -> str:
+            return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        data = await self._request_enveloped(
+            "GET",
+            API_PATH_MULTI_USER_TIMELINE,
+            params={"startTime": iso(start), "endTime": iso(end)},
+        )
+        if not isinstance(data, dict):
+            raise GeoPulseApiError("Unexpected multi-user timeline response")
+        return data
 
     async def async_post_homeassistant_location(
         self,

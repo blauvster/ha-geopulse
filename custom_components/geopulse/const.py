@@ -29,6 +29,9 @@ API_PATH_FRIENDS = "/api/friends"
 API_PATH_FRIEND_LOCATION = "/api/friends/{friend_id}/location"
 API_PATH_FRIENDS_LOCATION_TRAILS = "/api/friends/location/trails"
 API_PATH_HOMEASSISTANT_INGEST = "/api/homeassistant"
+# Stays/trips/gaps plus path segments for the token owner and every friend
+# sharing their timeline, in one call (card only).
+API_PATH_MULTI_USER_TIMELINE = "/api/streaming-timeline/multi-user"
 
 # GET /api/friends/location/trails caps how far back `minutes` can look.
 FRIENDS_TRAILS_MAX_MINUTES = 1440

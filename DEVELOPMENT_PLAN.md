@@ -218,19 +218,30 @@ token from the saved refresh token (access tokens expire after 30 min).
 After that most trackers will report no battery (→ `0` in GeoPulse) unless
 we add an optional per-entity battery sensor mapping.
 
-## Phase 5 — Lovelace card
+## Phase 5 — Lovelace card — done
 
-This is the only phase that touches location *history* — `api.py`
-already has `async_get_friend_location` and
-`async_get_friends_location_trails` ready for a friend's path; the
-account's own history still needs research below.
-
-- [ ] Research `/api/streaming-timeline` and related endpoints (deferred
-      from Plan.md §12 — not yet pulled from source)
-- [ ] Backend proxy (HA websocket command or `/api/geopulse/...` REST
-      endpoint) so the raw API token never reaches frontend JS
-- [ ] `www/geopulse-card.js`: map + stay/trip list for a selected date
-      range
+- [x] Research: `GET /api/streaming-timeline/multi-user` returns stays,
+      trips, gaps *and* path segments for the owner plus every friend
+      sharing their timeline in one call (Plan.md §12); live-verified.
+- [x] Backend proxy (`timeline.py`): websocket `geopulse/timeline`,
+      admin-only, whole days in HA's time zone, ≤31 days, trimmed payload
+      (~13× smaller). Errors: `invalid_range`, `not_found`,
+      `unauthorized`, `geopulse_unavailable`.
+- [x] Card (`frontend/geopulse-card.js`, no build step): Today /
+      Yesterday / 7 days, date pickers with prev/next, per-person toggle
+      chips with distance, map (paths + stay markers with tooltips, fit to
+      data), chronological list (stays, trips with movement icon,
+      distance and duration, data gaps; day headers for ranges; click to
+      focus the map). Light/dark, metric/imperial, HA time zone and locale.
+- [x] Served by the integration with vendored Leaflet 1.9.4 (npm tarball,
+      integrity-checked) and auto-registered on all dashboards — HACS
+      can't ship an integration and a dashboard plugin from one repo.
+- [x] Tests: `tests/test_timeline.py` (trimming, day boundaries in HA's
+      tz, admin-only, range limits, error mapping, entry selection, card
+      registration). Visual check in headless Chromium with fake data
+      (light, dark, error) — found CARTO tiles now need an API key, so the
+      default is OpenStreetMap. Live check against production through the
+      dev HA: 3 people, 29 KiB/day, 7 days in 0.4 s.
 
 ## Phase 6 — Packaging & docs
 
@@ -251,6 +262,6 @@ account's own history still needs research below.
 
 ## Current status
 
-Phases 0–4 done; 86 tests passing in Docker (`docker/run-tests.sh`).
-Import verified end to end against production; export payload verified
-with one live point. Next: Phase 5 (Lovelace card).
+Phases 0–5 done; 97 tests passing in Docker (`docker/run-tests.sh`).
+Import verified end to end against production; export verified live
+(two accounts); card verified live. Next: Phase 6 (packaging & docs).
