@@ -1,4 +1,4 @@
-"""Backend for the GeoPulse Lovelace card (Plan.md §7).
+"""Backend for the GeoPulse Lovelace card (docs/DEVELOPMENT.md, Timeline card).
 
 The card never talks to GeoPulse directly: it calls the `geopulse/timeline`
 websocket command, which uses the entry's read token server-side, so the

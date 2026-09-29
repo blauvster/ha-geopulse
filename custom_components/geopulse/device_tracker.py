@@ -227,7 +227,7 @@ class GeoPulseTracker(CoordinatorEntity[GeoPulseCoordinator], TrackerEntity):
 class GeoPulseUnrecordedTracker(GeoPulseTracker):
     """Tracker whose location attributes never reach HA's recorder.
 
-    This is how history stays GeoPulse-only (Plan.md §6). HA core has no
+    This is how history stays GeoPulse-only (docs/DEVELOPMENT.md, Recorder). HA core has no
     per-entity recorder-exclude registry option - the recorder only honours
     its YAML filter - so per-entity-class `_unrecorded_attributes` is the
     supported mechanism. The zone state (home/not_home/zone name) is still

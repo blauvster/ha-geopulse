@@ -3,7 +3,7 @@
 Endpoints and response shapes are confirmed against the GeoPulse backend
 source (tess1o/geopulse@main) rather than its docs site, whose published
 docs and generated OpenAPI spec are incomplete for several endpoints used
-here. See Plan.md §12 for the endpoint-by-endpoint references.
+here. See docs/DEVELOPMENT.md, GeoPulse API, for endpoint details and quirks.
 
 This module has no Home Assistant imports so it can be unit tested in
 isolation and reused by both the coordinator and the export flow.
@@ -274,7 +274,7 @@ class GeoPulseClient:
     async def async_get_friend_location(self, friend_id: str) -> FriendPoint | None:
         """One friend's current location, with accuracy/altitude/velocity.
 
-        Card use only (Plan.md Development Plan Phase 5) - the import
+        Card use only (docs/DEVELOPMENT.md, Timeline card) - the import
         coordinator (Phase 3) deliberately never calls this or
         `async_get_friends_location_trails`. History stays in GeoPulse;
         HA only ever polls current position via `async_get_friends`.
@@ -289,7 +289,7 @@ class GeoPulseClient:
     ) -> dict[str, list[FriendPoint]]:
         """Recent location history for every friend sharing live location.
 
-        Card use only (Plan.md Development Plan Phase 5) - not called by
+        Card use only (docs/DEVELOPMENT.md, Timeline card) - not called by
         the import coordinator (Phase 3), which polls current position
         only so that GeoPulse remains the sole source of truth for
         history and HA's recorder never mirrors it.
@@ -313,7 +313,7 @@ class GeoPulseClient:
     ) -> dict[str, Any]:
         """Timelines for the token owner and every friend sharing theirs.
 
-        Card use only (Plan.md §7) - history is fetched live and on demand,
+        Card use only (docs/DEVELOPMENT.md, Timeline card) - history is fetched live and on demand,
         never polled or stored in HA. Returns the raw MultiUserTimelineDTO:
         {requestingUserId, timelines: [{userId, fullName, assignedColor,
         timeline: {stays, trips, dataGaps}, pathSegments, stats}], ...}.

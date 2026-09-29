@@ -89,7 +89,7 @@ async def test_entities_created(hass: HomeAssistant, mock_api: MagicMock) -> Non
     assert alex.attributes["latitude"] == 1.0
     assert alex.attributes["battery"] == 50.0
     assert alex.attributes["last_seen"] == "2026-09-29T11:00:00+00:00"
-    # Friend summary carries no accuracy/altitude/speed (Plan.md §4).
+    # Friend summary carries no accuracy/altitude/speed (docs/DEVELOPMENT.md, Import).
     assert "altitude" not in alex.attributes
 
 

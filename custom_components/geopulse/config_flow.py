@@ -115,7 +115,7 @@ async def _async_fetch_account(
         _Account(
             user_id=user_id,
             # HOME_ASSISTANT is what this integration exports; importing it
-            # back would loop (Plan.md §3).
+            # back would loop (docs/DEVELOPMENT.md, Import).
             source_types=sorted(
                 {c.type for c in configs if c.type != SOURCE_TYPE_HOME_ASSISTANT}
             ),
@@ -197,7 +197,7 @@ def _export_schema(hass: HomeAssistant, options: Mapping[str, Any]) -> vol.Schem
     """Export picker.
 
     Every device_tracker this integration created is excluded, which is what
-    stops export and import from overlapping (Plan.md §1) - no runtime
+    stops export and import from overlapping (docs/DEVELOPMENT.md, Export) - no runtime
     "did this come from GeoPulse?" check needed.
     """
     own_entities = [

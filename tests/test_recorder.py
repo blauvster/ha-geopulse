@@ -50,7 +50,7 @@ async def test_recorder_exclusion(
     exclude: bool,
     recorded: bool,
 ) -> None:
-    """Coordinates really don't land in the recorder DB (Plan.md §6)."""
+    """Coordinates really don't land in the recorder DB (docs/DEVELOPMENT.md, Recorder)."""
     await setup_entry(hass, **{CONF_RECORDER_EXCLUDE: exclude})
     mock_api.async_get_last_known_position.return_value = gps_point(lat=52.0, lng=0.5)
     await poll(hass, freezer)

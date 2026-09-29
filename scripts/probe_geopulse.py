@@ -1,4 +1,4 @@
-"""Read-only probe of a real GeoPulse server against Plan.md §12's assumptions.
+"""Read-only probe of a real GeoPulse server against docs/DEVELOPMENT.md's GeoPulse API notes.
 
 Issues GET requests only. Output is redacted: JSON is printed as a type
 skeleton (no coordinates, names, emails or ids); only enum-like fields and

@@ -243,8 +243,8 @@ docker/run-tests.sh -k export
 - The card is plain JavaScript with no build step
   (`custom_components/geopulse/frontend/geopulse-card.js`). Leaflet 1.9.4
   is vendored next to it under its BSD-2 licence.
-- Design notes and verified GeoPulse API details: [Plan.md](Plan.md),
-  [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md).
+- Architecture, design decisions and verified GeoPulse API details:
+  [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 Releases follow [Semantic Versioning](https://semver.org/); see
 [CHANGELOG.md](CHANGELOG.md).

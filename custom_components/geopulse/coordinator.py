@@ -2,8 +2,9 @@
 
 Current position only: the coordinator never calls the friend-location or
 trail endpoints, so GeoPulse stays the only store of location history
-(Plan.md §4). GeoPulse has no outbound webhooks yet; if it gains them, push
-handlers can feed `async_set_updated_data()` with the same `GeoPulseData`.
+(docs/DEVELOPMENT.md, Import). GeoPulse has no outbound webhooks yet; if it
+gains them, push handlers can feed `async_set_updated_data()` with the same
+`GeoPulseData`.
 """
 
 from __future__ import annotations
@@ -37,10 +38,10 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # How long imported trackers keep showing their last position while GeoPulse
-# is unreachable before going unavailable (Plan.md §9 open item). Riding out
-# short outages avoids spurious zone exits (home -> unavailable -> home)
-# firing automations; past this, the position is too stale to present as
-# current.
+# is unreachable before going unavailable (docs/DEVELOPMENT.md, Import).
+# Riding out short outages avoids spurious zone exits (home -> unavailable ->
+# home) firing automations; past this, the position is too stale to present
+# as current.
 MIN_UNAVAILABLE_GRACE = timedelta(minutes=5)
 UNAVAILABLE_GRACE_POLLS = 3
 
@@ -87,7 +88,7 @@ class GeoPulseCoordinator(TimestampDataUpdateCoordinator[GeoPulseData]):
         try:
             account, friends, *points = await asyncio.gather(
                 self.client.async_get_last_known_position() if want_account else none(),
-                # One call covers every friend (Plan.md §4).
+                # One call covers every friend (docs/DEVELOPMENT.md, Import).
                 self.client.async_get_friends() if want_friends else none(),
                 *(
                     self.client.async_get_latest_point_for_source_type(t)

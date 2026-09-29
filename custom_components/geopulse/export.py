@@ -2,7 +2,7 @@
 
 Replaces GeoPulse's documented rest_command + automation recipe: listens to
 the selected device_trackers and POSTs each new position to
-/api/homeassistant (Plan.md §5).
+/api/homeassistant (docs/DEVELOPMENT.md, Export).
 
 GeoPulse builds one timeline per *user*; `device_id` is only a label. So
 trackers for different people must go to different GeoPulse accounts, i.e.

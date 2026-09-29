@@ -56,7 +56,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeoPulseConfigEntry) -> 
     exporter = None
     if export_entities := entry.options.get(CONF_EXPORT_ENTITIES, {}):
         # Separate clients: the export endpoint authenticates with
-        # location-source tokens, not the read token (Plan.md §2).
+        # location-source tokens, not the read token (docs/DEVELOPMENT.md, Tokens).
         exporter = GeoPulseExporter(
             hass,
             entry,

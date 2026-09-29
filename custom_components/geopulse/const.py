@@ -19,7 +19,7 @@ SOURCE_TYPE_COLOTA = "COLOTA"
 SOURCE_TYPE_MANUAL = "MANUAL"
 SOURCE_TYPE_MOBILE_APP = "MOBILE_APP"
 
-# API paths, confirmed against backend source (see Plan.md §12).
+# API paths, confirmed against backend source (see docs/DEVELOPMENT.md, GeoPulse API).
 API_PATH_GPS_SOURCE = "/api/gps/source/"
 API_PATH_GPS_LAST_KNOWN_POSITION = "/api/gps/last-known-position"
 # Paginated point list. Not /api/gps/points - that path is POST-only (mobile
@@ -43,7 +43,7 @@ CONF_IMPORT_SOURCE_TYPES = "import_source_types"
 CONF_IMPORT_AGGREGATE_ACCOUNT = "import_aggregate_account"
 CONF_IMPORT_FRIEND_IDS = "import_friend_ids"
 # {entity_id: device_id} - device_id is the payload field GeoPulse uses to
-# tell exported devices apart; defaults to the entity_id (Plan.md §3).
+# tell exported devices apart; defaults to the entity_id (docs/DEVELOPMENT.md, Export).
 CONF_EXPORT_ENTITIES = "export_entities"
 # {entity_id: location-source token} in entry.data. GeoPulse keeps one
 # timeline per user, so each person's trackers go to their own account.
