@@ -1,0 +1,44 @@
+"""Constants for the GeoPulse integration."""
+
+DOMAIN = "geopulse"
+
+# GeoPulse's GpsSourceType enum (backend/src/main/java/.../shared/gps/GpsSourceType.java),
+# confirmed against tess1o/geopulse@main. HOME_ASSISTANT is always excluded from import
+# selection since it's data this integration itself exports.
+SOURCE_TYPE_OWNTRACKS = "OWNTRACKS"
+SOURCE_TYPE_GPSLOGGER = "GPSLOGGER"
+SOURCE_TYPE_OVERLAND = "OVERLAND"
+SOURCE_TYPE_TRACCAR = "TRACCAR"
+SOURCE_TYPE_GOOGLE_TIMELINE = "GOOGLE_TIMELINE"
+SOURCE_TYPE_GPX = "GPX"
+SOURCE_TYPE_DAWARICH = "DAWARICH"
+SOURCE_TYPE_HOME_ASSISTANT = "HOME_ASSISTANT"
+SOURCE_TYPE_GEOJSON = "GEOJSON"
+SOURCE_TYPE_CSV = "CSV"
+SOURCE_TYPE_COLOTA = "COLOTA"
+SOURCE_TYPE_MANUAL = "MANUAL"
+SOURCE_TYPE_MOBILE_APP = "MOBILE_APP"
+
+# API paths, confirmed against backend source (see Plan.md §12).
+API_PATH_GPS_SOURCE = "/api/gps/source/"
+API_PATH_GPS_LAST_KNOWN_POSITION = "/api/gps/last-known-position"
+API_PATH_GPS_POINTS = "/api/gps/points"
+API_PATH_FRIENDS = "/api/friends"
+API_PATH_FRIEND_LOCATION = "/api/friends/{friend_id}/location"
+API_PATH_FRIENDS_LOCATION_TRAILS = "/api/friends/location/trails"
+API_PATH_HOMEASSISTANT_INGEST = "/api/homeassistant"
+
+# GET /api/friends/location/trails caps how far back `minutes` can look.
+FRIENDS_TRAILS_MAX_MINUTES = 1440
+
+# Config entry / options keys.
+CONF_BASE_URL = "base_url"
+CONF_READ_TOKEN = "read_token"
+CONF_EXPORT_TOKEN = "export_token"
+CONF_IMPORT_SOURCE_TYPES = "import_source_types"
+CONF_IMPORT_AGGREGATE_ACCOUNT = "import_aggregate_account"
+CONF_IMPORT_FRIEND_IDS = "import_friend_ids"
+CONF_EXPORT_ENTITIES = "export_entities"
+CONF_POLL_INTERVAL = "poll_interval"
+
+DEFAULT_POLL_INTERVAL_SECONDS = 45
