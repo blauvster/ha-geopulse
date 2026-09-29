@@ -243,8 +243,24 @@ we add an optional per-entity battery sensor mapping.
       default is OpenStreetMap. Live check against production through the
       dev HA: 3 people, 29 KiB/day, 7 days in 0.4 s.
 
-## Phase 6 — Packaging & docs
+## Phase 6 — Packaging & docs — done
 
+- [x] README for users: install (HACS / manual), setup, the one-account-
+      per-person export model, card config, privacy/recorder, behaviour,
+      known limitations, troubleshooting, development
+- [x] `hacs.json` for an integration repo (dropped the plugin-style
+      `filename`; `homeassistant: 2026.9.0`, the version tested against)
+- [x] `hassfest` (official Docker image) passes with no warnings
+- [x] CI (`.github/workflows/ci.yml`): hassfest, HACS validation (brands
+      check ignored — images ship in `brand/`), pytest on Python 3.14;
+      weekly run to catch new HA/HACS releases
+- [x] Versioning: SemVer; `manifest.json` is the source of truth, the card
+      declares the same version (test keeps them in sync); GitHub releases
+      tagged `vX.Y.Z`. `CHANGELOG.md`.
+- [x] License: MIT (Leaflet's BSD-2 licence kept with the vendored copy)
+- [x] Diagnostics (`diagnostics.py`): entry data redacted, no tokens,
+      server URL or coordinates — test asserts none leak
+- [x] `requirements-test.txt` pinned (plugin 0.13.367 → HA 2026.9.4)
 - [x] Brand icons in `custom_components/geopulse/brand/` (`icon`, `dark_icon`,
       each at 256 px and `@2x` 512 px). HA 2026.9 serves a custom
       integration's `brand/` folder locally before the brands CDN; `logo*`
@@ -254,14 +270,15 @@ we add an optional per-entity battery sensor mapping.
       `rsvg-convert -w 256 -h 256` (and 512 for `@2x`).
 - [ ] Optional: ask the GeoPulse maintainer about using the official logo
       instead, once the integration is published.
-- [ ] README with setup instructions, screenshots
-- [ ] `hacs.json` validation, versioning scheme
-- [ ] License
+- [ ] Screenshots for the README (need a real dashboard; left for the
+      maintainer so no real location data is published by accident)
+- [ ] First GitHub release `v0.1.0` once the repo is public and CI is green
 
 ---
 
 ## Current status
 
-Phases 0–5 done; 97 tests passing in Docker (`docker/run-tests.sh`).
-Import verified end to end against production; export verified live
-(two accounts); card verified live. Next: Phase 6 (packaging & docs).
+All phases done; 99 tests passing in Docker (`docker/run-tests.sh`),
+hassfest clean. Import, export (two accounts) and the card are verified
+live against a production GeoPulse. Remaining: README screenshots and the
+first release.

@@ -264,6 +264,16 @@ class GeoPulseExporter:
     def queue_length(self) -> int:
         return sum(len(lane.queue) for lane in self._lanes.values())
 
+    def diagnostics(self) -> dict[str, Any]:
+        """Per-account lane status for diagnostics - no tokens, no points."""
+        return {
+            "retry_queue": self.retry,
+            "accounts": [
+                {"trackers": list(lane.entity_ids), "queued_points": len(lane.queue)}
+                for lane in self._lanes.values()
+            ],
+        }
+
     async def async_start(self) -> None:
         # Queued points are kept even when the retry toggle is now off: they
         # were accepted while it was on.

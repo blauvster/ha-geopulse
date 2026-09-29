@@ -522,7 +522,7 @@ if (!customElements.get("geopulse-card")) {
     type: "geopulse-card",
     name: "GeoPulse timeline",
     description: "Map and stay/trip list from GeoPulse for a date range.",
-    documentationURL: "https://github.com/YOUR_GITHUB_USERNAME/ha-geopulse",
+    documentationURL: "https://github.com/blauvster/ha-geopulse#timeline-card",
   });
   console.info(`%c GEOPULSE-CARD %c ${VERSION} `, "background:#0f766e;color:#fff", "");
 }

@@ -1,3 +1,4 @@
-pytest
-pytest-asyncio
-pytest-homeassistant-custom-component
+# Pinned so test runs are reproducible; this version of the plugin pins
+# homeassistant 2026.9.4 (bump both together, together with hacs.json's
+# minimum "homeassistant" version if new HA APIs get used).
+pytest-homeassistant-custom-component==0.13.367

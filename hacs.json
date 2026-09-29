@@ -1,6 +1,5 @@
 {
   "name": "GeoPulse",
-  "render_readme": true,
-  "content_in_root": false,
-  "filename": "geopulse-card.js"
+  "homeassistant": "2026.9.0",
+  "render_readme": true
 }

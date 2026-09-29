@@ -272,7 +272,8 @@ their timeline, each in the colour GeoPulse assigns.
   on every dashboard automatically (`add_extra_js_url`), because HACS
   can't install one repository as both an integration and a dashboard
   plugin. This replaces the original `www/geopulse-card.js` idea.
-- License, versioning, README/docs: see Phase 6.
+- MIT licence; SemVer with `manifest.json` as the source of truth;
+  README for users. See DEVELOPMENT_PLAN.md Phase 6.
 
 ---
 

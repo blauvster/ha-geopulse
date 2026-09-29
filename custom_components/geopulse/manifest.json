@@ -6,15 +6,15 @@
     "http"
   ],
   "codeowners": [
-    "@YOUR_GITHUB_USERNAME"
+    "@blauvster"
   ],
   "config_flow": true,
   "dependencies": [
     "websocket_api"
   ],
-  "documentation": "https://github.com/YOUR_GITHUB_USERNAME/ha-geopulse",
+  "documentation": "https://github.com/blauvster/ha-geopulse",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/YOUR_GITHUB_USERNAME/ha-geopulse/issues",
+  "issue_tracker": "https://github.com/blauvster/ha-geopulse/issues",
   "requirements": [],
   "version": "0.1.0"
 }
