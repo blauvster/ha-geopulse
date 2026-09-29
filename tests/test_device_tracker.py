@@ -75,7 +75,7 @@ async def test_entities_created(hass: HomeAssistant, mock_api: MagicMock) -> Non
     assert account.attributes["gps_accuracy"] == 5.0
     assert account.attributes["source_type"] == "gps"
     assert account.attributes["altitude"] == 10.0
-    assert account.attributes["speed"] == 1.5
+    assert account.attributes["speed"] == pytest.approx(1.5 / 3.6)  # km/h -> m/s
     assert account.attributes["battery"] == 80.0
     assert account.attributes["last_seen"] == "2026-09-29T12:00:00+00:00"
     assert account.attributes["geopulse_source"] == "COLOTA"
@@ -187,23 +187,34 @@ async def test_auth_error_during_poll_starts_reauth(
 
 
 @pytest.mark.parametrize(
-    ("side_effect", "state", "reauth"),
-    [
-        (GeoPulseApiError("down"), ConfigEntryState.SETUP_RETRY, False),
-        (GeoPulseAuthError("bad"), ConfigEntryState.SETUP_ERROR, True),
-    ],
+    ("side_effect", "reauth"),
+    [(GeoPulseApiError("down"), False), (GeoPulseAuthError("bad"), True)],
 )
-async def test_setup_failures(
+async def test_geopulse_down_at_startup(
     hass: HomeAssistant,
     mock_api: MagicMock,
+    freezer: FrozenDateTimeFactory,
     side_effect: Exception,
-    state: ConfigEntryState,
     reauth: bool,
 ) -> None:
+    """Setup still succeeds (so export keeps running); trackers recover."""
     mock_api.async_get_last_known_position.side_effect = side_effect
     entry = await setup_entry(hass)
-    assert entry.state is state
+    assert entry.state is ConfigEntryState.LOADED
+    assert hass.states.get(ACCOUNT).state == STATE_UNAVAILABLE
     assert bool(hass.config_entries.flow.async_progress()) is reauth
+
+    mock_api.async_get_last_known_position.side_effect = None
+    await poll(hass, freezer)
+    assert hass.states.get(ACCOUNT).state == STATE_NOT_HOME
+
+
+async def test_friend_name_fallback_without_data(
+    hass: HomeAssistant, mock_api: MagicMock
+) -> None:
+    mock_api.async_get_friends.side_effect = GeoPulseApiError("down")
+    await setup_entry(hass)
+    assert hass.states.get("device_tracker.geopulse_friend_f1") is not None
 
 
 async def test_deselected_entity_removed(

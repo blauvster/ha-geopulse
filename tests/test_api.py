@@ -302,7 +302,36 @@ async def test_post_homeassistant_location_payload_shape(geopulse_server):
     assert captured["auth"] == f"Bearer {TOKEN}"
     assert captured["body"]["device_id"] == "tom_phone"
     assert captured["body"]["location"]["latitude"] == 51.5
-    assert captured["body"]["battery"]["level"] == 80.0
+    assert captured["body"]["battery"]["level"] == 80
+    assert captured["body"]["timestamp"] == "2026-09-21T12:00:00.000Z"
+
+
+async def test_post_homeassistant_location_fills_required_fields(geopulse_server):
+    """Mirrors the live server: empty 200 with no Content-Type, and a 500 if
+    altitude or battery is missing."""
+    captured = {}
+
+    async def handler(request: web.Request) -> web.Response:
+        body = await request.json()
+        captured["body"] = body
+        if body["location"].get("altitude") is None or body.get("battery") is None:
+            return web.json_response({"message": "NPE"}, status=500)
+        return web.Response(status=200)
+
+    geopulse_server.route("POST", "/api/homeassistant", handler)
+    client, test_client = await make_client(geopulse_server)
+    try:
+        await client.async_post_homeassistant_location(
+            device_id="router_tracker",
+            timestamp=datetime(2026, 9, 21, 12, 0, 0, tzinfo=timezone.utc),
+            latitude=51.5,
+            longitude=-0.1,
+        )
+    finally:
+        await test_client.close()
+
+    assert captured["body"]["location"]["altitude"] == 0.0
+    assert captured["body"]["battery"] == {"level": 0}
 
 
 async def test_401_raises_auth_error(geopulse_server):

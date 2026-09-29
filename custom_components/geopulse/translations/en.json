@@ -109,5 +109,11 @@
       "cannot_connect": "Couldn't reach GeoPulse.",
       "unknown": "Unexpected error; check the Home Assistant logs."
     }
+  },
+  "issues": {
+    "export_auth_failed": {
+      "title": "GeoPulse export token rejected",
+      "description": "GeoPulse rejected the Home Assistant location source token for {title}, so location export has stopped. Points are kept in the retry queue if it's enabled. Create a new token in GeoPulse (Settings → Location Sources) and enter it under the integration's options → Export selection."
+    }
   }
 }

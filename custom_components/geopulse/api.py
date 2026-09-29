@@ -11,8 +11,9 @@ isolation and reused by both the coordinator and the export flow.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
@@ -193,9 +194,13 @@ class GeoPulseClient:
                     raise GeoPulseApiError(
                         f"GeoPulse returned {response.status} for {path}: {body}"
                     )
-                if response.status == 204:
+                # Not response.json(): /api/homeassistant answers 200 with an
+                # empty body and no Content-Type, which aiohttp's json()
+                # rejects before looking at the body.
+                body = await response.read()
+                if not body.strip():
                     return None
-                return await response.json()
+                return json.loads(body)
         except (ClientError, TimeoutError) as err:
             # aiohttp's total-request timeout raises a bare TimeoutError, not a
             # ClientError subclass, so it has to be caught separately.
@@ -320,18 +325,25 @@ class GeoPulseClient:
         from the Bearer token matching a HOME_ASSISTANT-type source config, so
         it must be called with the export/location-source token, not the read
         token used by the rest of this client.
+
+        `speed` is m/s (GeoPulse converts to km/h on ingest). Altitude and
+        battery are sent even when unknown: GeoPulse's mapper unboxes both
+        unconditionally and answers 500 if either is missing (confirmed
+        against a live server), so unknown altitude becomes 0.0 and unknown
+        battery 0. `battery.level` is an int server-side.
         """
         body: dict[str, Any] = {
             "device_id": device_id,
-            "timestamp": timestamp.isoformat(),
+            "timestamp": timestamp.astimezone(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z"),
             "location": {
                 "latitude": latitude,
                 "longitude": longitude,
                 "accuracy": accuracy,
-                "altitude": altitude,
+                "altitude": altitude if altitude is not None else 0.0,
                 "speed": speed,
             },
+            "battery": {"level": round(battery_level) if battery_level is not None else 0},
         }
-        if battery_level is not None:
-            body["battery"] = {"level": battery_level}
         await self._request("POST", API_PATH_HOMEASSISTANT_INGEST, json_body=body)

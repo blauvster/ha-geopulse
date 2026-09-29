@@ -160,6 +160,10 @@ The actual model, and what v1 import is built around:
   }
   ```
 
+- Server quirk (§12): altitude and battery must always be present, so
+  unknown values are sent as `0.0` altitude and battery level `0`. Worth
+  reporting upstream; a `0` battery on a tracker without one is the
+  visible side effect.
 - **Retry queue** (default on): buffer failed POSTs (GeoPulse unreachable,
   network blip) and retry rather than silently dropping the point, as the
   manual method does today. Persisted to disk (HA `Store` helper) so
@@ -287,7 +291,7 @@ and return the envelope `{"status": "success"|"error", "message": str|null,
 | List friends | `GET /api/friends` | `data` is `List<FriendInfoDTO>`: `userId, friendId, avatar, lastLongitude, lastLatitude, fullName, email, lastSeen, lastBattery, lastLocation, latestActivityType, latestActivityDurationSeconds, friendSharesLiveLocation, friendSharesTimeline`. Only offer friends with `friendSharesLiveLocation == true` for import. |
 | *(card only, not polled by the coordinator)* One friend's current location | `GET /api/friends/{friendId}/location` | Path param is the friend's user id (UUID). `data` is a `GpsPointPathPointDTO`: `id, longitude, latitude, timestamp, accuracy, altitude, velocity, userId, sourceType`. No battery. |
 | *(card only, not polled by the coordinator)* Recent history for all friends | `GET /api/friends/location/trails?minutes=N&endTime=<ISO>` | `N` required, server-validated `1 <= N <= 1440` (max 24h lookback), `endTime` optional (defaults to now). `data` is `{"<friendId>": [GpsPointPathPointDTO, ...], ...}` — a real rolling-window trail per friend. Only covers friends currently sharing live location. Reserved for §7's map card, not the import coordinator — see §4. |
-| Export location (Home Assistant source) | `POST /api/homeassistant` | **Public** endpoint (no JWT/API-token auth) — identity comes from `Authorization: Bearer <location-source-token>` alone, verified against `config` matching a `GpsSourceConfigEntity` of type `HOME_ASSISTANT`. Body is `HomeAssistantGpsData`: `device_id` (string), `timestamp` (ISO-8601 `Instant`), `location.{latitude, longitude, accuracy, altitude, speed}` (all `double`), `battery.level` (`double`). Matches Plan §5 exactly — no changes needed there. |
+| Export location (Home Assistant source) | `POST /api/homeassistant` | **Public** endpoint (no JWT/API-token auth) — identity comes from `Authorization: Bearer <location-source-token>` alone, verified against `config` matching a `GpsSourceConfigEntity` of type `HOME_ASSISTANT`. Body is `HomeAssistantGpsData`: `device_id` (string), `timestamp` (ISO-8601 `Instant`), `location.{latitude, longitude}` (`double`), `location.{accuracy, altitude, speed}` (`Double`, speed in m/s — stored as km/h), `battery.level` (**`int`**). **Live-verified 2026-09-29:** success is `200` with an empty body and *no* Content-Type; a bad token is `401`; and despite being "optional", a null `altitude` or a missing `battery` object makes the server's mapper throw → `500`, nothing stored. The client always sends both (unknown → `0.0` / `0`). |
 
 `GpsSourceType` enum (for the §3 pre-filter and per-type import):
 `OWNTRACKS, GPSLOGGER, OVERLAND, TRACCAR, GOOGLE_TIMELINE, GPX, DAWARICH,

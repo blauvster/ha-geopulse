@@ -58,7 +58,8 @@ class Position:
             longitude=point.longitude,
             accuracy=point.accuracy,
             altitude=point.altitude,
-            speed=point.velocity,
+            # GeoPulse stores km/h for every source; HA trackers use m/s.
+            speed=point.velocity / 3.6 if point.velocity is not None else None,
             battery=point.battery,
             last_seen=point.timestamp,
             source_type=point.source_type,
@@ -116,8 +117,10 @@ async def async_setup_entry(
             )
         )
     for friend_id in options.get(CONF_IMPORT_FRIEND_IDS, []):
-        friend = coordinator.data.friends.get(friend_id)
-        label = (friend and (friend.full_name or friend.email)) or friend_id
+        # No data if GeoPulse was down at startup; the name only matters for
+        # the entity_id on first registration, which follows a live flow.
+        friend = coordinator.data.friends.get(friend_id) if coordinator.data else None
+        label = (friend and (friend.full_name or friend.email)) or f"friend {friend_id[:8]}"
         entities.append(
             tracker_cls(
                 coordinator,

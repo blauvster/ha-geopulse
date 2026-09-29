@@ -165,13 +165,41 @@ four trackers (account, Colota, two friends) and loaded cleanly; history
 API confirmed no coordinates recorded. Dev HA state and credentials live
 in `.ha-config/` (git-ignored).
 
-## Phase 4 — Export
+## Phase 4 — Export — done
 
-- [ ] `async_track_state_change_event` per selected entity_id
-- [ ] POST to `/api/homeassistant` with the payload shape from Plan.md §12
-- [ ] Retry queue persisted via HA's `Store` helper (survives restarts,
-      per the earlier plan review decision)
-- [ ] `device_id` field defaults to the HA `entity_id`, editable at setup
+- [x] `GeoPulseExporter` (`export.py`): `async_track_state_change_event` on
+      the selected entities; each move (lat/lng/accuracy changed, state not
+      unavailable/unknown) becomes a queue item. Router/zone-only trackers
+      without coordinates are skipped.
+- [x] POST to `/api/homeassistant` with its own client on the export
+      token; timestamp is the state's `last_updated` as UTC
+      `...sssZ`; battery from `battery_level` (or `battery`).
+- [x] Queue persisted with `Store` (`geopulse.<entry_id>.export_queue`,
+      delayed save + save on unload), delivered strictly in order,
+      at-least-once. Failures back off 30 s → 15 min; new points wait
+      behind a pending retry. Capped at 5000 (oldest dropped). With the
+      retry toggle off, failed points are dropped. Queue removed with the
+      entry.
+- [x] Rejected export token → a Repairs issue (the read token's reauth
+      flow isn't involved); cleared on the next successful send.
+- [x] `device_id` per entity from the config/options flow (Phase 2).
+- [x] Setup no longer fails when the first import poll fails: that would
+      have stopped the exporter during exactly the outage the queue is for.
+      Trackers start unavailable and recover on the next poll.
+- [x] Tests: 22 in `tests/test_export.py`; queue behaviours mutation-checked.
+
+**Live findings (2026-09-29, one test point, `device_id` `ha-geopulse-test`):**
+- Success is an empty `200` with no Content-Type. `response.json()`
+  rejected that, so every successful export would have been reported as a
+  failure; `api.py` now parses the raw body.
+- Null `altitude` or missing `battery` → `500` (server-side unboxing),
+  nothing stored. Both are now always sent (unknown → `0.0` / `0`).
+- `battery.level` is an int. GeoPulse stores speed as km/h, so the import
+  side now converts `velocity` back to m/s for HA.
+
+**Known limitation:** `battery_level` on trackers goes away in HA 2027.7.
+After that most trackers will report no battery (→ `0` in GeoPulse) unless
+we add an optional per-entity battery sensor mapping.
 
 ## Phase 5 — Lovelace card
 
@@ -206,5 +234,6 @@ account's own history still needs research below.
 
 ## Current status
 
-Phases 0–3 done; 58 tests passing in Docker (`docker/run-tests.sh`), and
-import verified end to end against production. Next: Phase 4 (export).
+Phases 0–4 done; 82 tests passing in Docker (`docker/run-tests.sh`).
+Import verified end to end against production; export payload verified
+with one live point. Next: Phase 5 (Lovelace card).
