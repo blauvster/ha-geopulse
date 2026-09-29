@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import voluptuous as vol
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
@@ -17,7 +18,6 @@ from custom_components.geopulse.const import (
     CONF_EXPORT_ENTITIES,
     CONF_EXPORT_ENTITY_TOKENS,
     CONF_EXPORT_RETRY_QUEUE,
-    CONF_EXPORT_TOKEN,
     CONF_IMPORT_AGGREGATE_ACCOUNT,
     CONF_IMPORT_FRIEND_IDS,
     CONF_IMPORT_SOURCE_TYPES,
@@ -44,14 +44,30 @@ def schema_field(result: dict[str, Any], name: str) -> Any:
 
 
 def device(device_id: str, token: str | None = None) -> dict[str, str]:
-    """Input for one tracker's section in the export_device_ids step."""
+    """Input for one tracker's export_device_ids screen."""
     return {"device_id": device_id} | ({"token": token} if token else {})
 
 
-def suggested_device_id(result: dict[str, Any], entity_id: str) -> str:
-    sec = schema_field(result, entity_id)
-    key = next(k for k in sec.schema.schema if str(k) == "device_id")
+def suggested_device_id(result: dict[str, Any]) -> str:
+    key = next(k for k in result["data_schema"].schema if str(k) == "device_id")
     return key.description["suggested_value"]
+
+
+def token_required(result: dict[str, Any]) -> bool:
+    key = next(k for k in result["data_schema"].schema if str(k) == "token")
+    return isinstance(key, vol.Required)
+
+
+async def submit_devices(
+    configure: Any, result: dict[str, Any], *inputs: dict[str, str]
+) -> dict[str, Any]:
+    """Fill the export_device_ids screen once per tracker, in order."""
+    for values in inputs:
+        assert result["step_id"] == "export_device_ids", result
+        result = await configure(result["flow_id"], values)
+        if result.get("errors"):
+            return result
+    return result
 
 
 def select_values(result: dict[str, Any], name: str) -> list[str]:
@@ -104,25 +120,33 @@ async def test_full_flow_import_and_export(hass: HomeAssistant, mock_client: Mag
         },
     )
     assert result["step_id"] == "export_selection"
+    assert [str(k) for k in result["data_schema"].schema] == [
+        CONF_EXPORT_ENTITIES, CONF_EXPORT_RETRY_QUEUE
+    ]  # no entry-wide token
 
-    hass.states.async_set("device_tracker.phone", "home")
+    hass.states.async_set("device_tracker.phone", "home", {"friendly_name": "Phone"})
     hass.states.async_set("device_tracker.tablet", "home")
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
         {
             CONF_EXPORT_ENTITIES: ["device_tracker.phone", "device_tracker.tablet"],
-            CONF_EXPORT_TOKEN: "export",
             CONF_EXPORT_RETRY_QUEUE: True,
         },
     )
+    # One screen per tracker, with a real label and the entity id.
     assert result["step_id"] == "export_device_ids"
+    assert result["description_placeholders"] == {
+        "entity": "Phone (device_tracker.phone)", "index": "1", "total": "2"
+    }
+    assert suggested_device_id(result) == "device_tracker.phone"
+    assert token_required(result)
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            "device_tracker.phone": device(" my_phone "),
-            "device_tracker.tablet": device("device_tracker.tablet"),
-        },
+        result["flow_id"], device(" my_phone ", "tok-me")
+    )
+    assert result["description_placeholders"]["index"] == "2"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], device("device_tracker.tablet", "tok-alex")
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "geopulse.example.com"
@@ -130,7 +154,10 @@ async def test_full_flow_import_and_export(hass: HomeAssistant, mock_client: Mag
     assert result["data"] == {
         CONF_BASE_URL: BASE_URL,
         CONF_READ_TOKEN: "read",
-        CONF_EXPORT_TOKEN: "export",
+        CONF_EXPORT_ENTITY_TOKENS: {
+            "device_tracker.phone": "tok-me",
+            "device_tracker.tablet": "tok-alex",
+        },
     }
     assert result["options"] == {
         CONF_IMPORT_AGGREGATE_ACCOUNT: False,
@@ -155,7 +182,7 @@ async def test_import_only_skips_device_ids(hass: HomeAssistant, mock_client: Ma
         result["flow_id"], {CONF_EXPORT_RETRY_QUEUE: True}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert CONF_EXPORT_TOKEN not in result["data"]
+    assert CONF_EXPORT_ENTITY_TOKENS not in result["data"]
     assert result["options"][CONF_EXPORT_ENTITIES] == {}
 
 
@@ -226,35 +253,26 @@ async def test_unique_id_falls_back_to_url(hass: HomeAssistant, mock_client: Mag
 
 
 async def test_export_requires_token(hass: HomeAssistant, mock_client: MagicMock) -> None:
-    """No default token: every tracker needs its own, and the error names them."""
     hass.states.async_set("device_tracker.phone", "home")
-    hass.states.async_set("device_tracker.tablet", "home")
     result = await start_flow(hass)
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_IMPORT_AGGREGATE_ACCOUNT: False}
     )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"],
-        {
-            CONF_EXPORT_ENTITIES: ["device_tracker.phone", "device_tracker.tablet"],
-            CONF_EXPORT_RETRY_QUEUE: True,
-        },
+        {CONF_EXPORT_ENTITIES: ["device_tracker.phone"], CONF_EXPORT_RETRY_QUEUE: True},
     )
-    assert result["step_id"] == "export_device_ids"
+    # Blank token (the frontend would block it; the backend must too).
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            "device_tracker.phone": device("phone", "tok-alex"),
-            "device_tracker.tablet": device("tablet"),
-        },
+        result["flow_id"], {"device_id": "phone", "token": "  "}
     )
-    assert result["errors"] == {"base": "export_token_required"}
-    assert result["description_placeholders"] == {"entities": "device_tracker.tablet"}
+    assert result["errors"] == {"token": "export_token_required"}
+    assert suggested_device_id(result) == "phone"
 
 
 async def test_per_tracker_tokens(hass: HomeAssistant, mock_client: MagicMock) -> None:
-    """Different people -> different GeoPulse accounts; labels may repeat
-    across accounts. A tracker without its own token uses the default."""
+    """Different people -> different accounts, where labels may repeat; one
+    person's trackers may share a token."""
     for eid in ("phone", "tablet", "watch"):
         hass.states.async_set(f"device_tracker.{eid}", "home")
     result = await start_flow(hass)
@@ -267,21 +285,19 @@ async def test_per_tracker_tokens(hass: HomeAssistant, mock_client: MagicMock) -
             CONF_EXPORT_ENTITIES: [
                 "device_tracker.phone", "device_tracker.tablet", "device_tracker.watch"
             ],
-            CONF_EXPORT_TOKEN: "tok-me",
             CONF_EXPORT_RETRY_QUEUE: True,
         },
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            "device_tracker.phone": device("phone"),
-            "device_tracker.tablet": device("phone", "tok-alex"),
-            "device_tracker.watch": device("watch"),
-        },
+    result = await submit_devices(
+        hass.config_entries.flow.async_configure, result,
+        device("phone", "tok-me"), device("phone", "tok-alex"), device("watch", "tok-me"),
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_EXPORT_TOKEN] == "tok-me"
-    assert result["data"][CONF_EXPORT_ENTITY_TOKENS] == {"device_tracker.tablet": "tok-alex"}
+    assert result["data"][CONF_EXPORT_ENTITY_TOKENS] == {
+        "device_tracker.phone": "tok-me",
+        "device_tracker.tablet": "tok-alex",
+        "device_tracker.watch": "tok-me",
+    }
     assert result["options"][CONF_EXPORT_ENTITIES] == {
         "device_tracker.phone": "phone",
         "device_tracker.tablet": "phone",
@@ -301,19 +317,18 @@ async def test_nothing_selected(hass: HomeAssistant, mock_client: MagicMock) -> 
 
 
 @pytest.mark.parametrize(
-    ("inputs", "error", "entities"),
+    ("inputs", "error"),
     [
-        # Same account (both on the default token): labels must differ.
-        ([device("same"), device("same")], "duplicate_device_id", "device_tracker.tablet"),
-        ([device("  "), device("tablet")], "device_id_required", "device_tracker.phone"),
+        # Same account: labels must differ.
+        ([device("same", "tok"), device("same", "tok")], {"device_id": "duplicate_device_id"}),
+        ([device("  ", "tok")], {"device_id": "device_id_required"}),
     ],
 )
 async def test_device_id_validation(
     hass: HomeAssistant,
     mock_client: MagicMock,
     inputs: list[dict[str, str]],
-    error: str,
-    entities: str,
+    error: dict[str, str],
 ) -> None:
     hass.states.async_set("device_tracker.phone", "home")
     hass.states.async_set("device_tracker.tablet", "home")
@@ -325,16 +340,13 @@ async def test_device_id_validation(
         result["flow_id"],
         {
             CONF_EXPORT_ENTITIES: ["device_tracker.phone", "device_tracker.tablet"],
-            CONF_EXPORT_TOKEN: "export",
             CONF_EXPORT_RETRY_QUEUE: True,
         },
     )
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        dict(zip(["device_tracker.phone", "device_tracker.tablet"], inputs)),
-    )
-    assert result["errors"] == {"base": error}
-    assert result["description_placeholders"] == {"entities": entities}
+    result = await submit_devices(hass.config_entries.flow.async_configure, result, *inputs)
+    assert result["errors"] == error
+    # The rejected value is kept for correction; the token never is.
+    assert suggested_device_id(result) == inputs[-1]["device_id"]
 
 
 async def test_export_picker_excludes_own_entities(
@@ -355,7 +367,6 @@ async def test_export_picker_excludes_own_entities(
             result["flow_id"],
             {
                 CONF_EXPORT_ENTITIES: ["device_tracker.gp"],
-                CONF_EXPORT_TOKEN: "t",
                 CONF_EXPORT_RETRY_QUEUE: True,
             },
         )
@@ -486,16 +497,17 @@ async def test_options_export_adds_token_and_entities(
         result["flow_id"],
         {CONF_EXPORT_ENTITIES: ["device_tracker.phone"], CONF_EXPORT_RETRY_QUEUE: False},
     )
+    assert token_required(result)  # nothing saved for this tracker yet
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"device_tracker.phone": device("phone")}
+        result["flow_id"], {"device_id": "phone", "token": ""}
     )
-    assert result["errors"] == {"base": "export_token_required"}
+    assert result["errors"] == {"token": "export_token_required"}
 
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"device_tracker.phone": device("phone", "export")}
+        result["flow_id"], device("phone", "tok-me")
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.data[CONF_EXPORT_ENTITY_TOKENS] == {"device_tracker.phone": "export"}
+    assert entry.data[CONF_EXPORT_ENTITY_TOKENS] == {"device_tracker.phone": "tok-me"}
     assert entry.options[CONF_EXPORT_ENTITIES] == {"device_tracker.phone": "phone"}
     assert entry.options[CONF_EXPORT_RETRY_QUEUE] is False
 
@@ -511,7 +523,6 @@ async def test_options_export_blank_token_keeps_existing(
         entry,
         data={
             **entry.data,
-            CONF_EXPORT_TOKEN: "old",
             CONF_EXPORT_ENTITY_TOKENS: {"device_tracker.phone": "tok-alex", "device_tracker.tablet": "x"},
         },
     )
@@ -525,21 +536,23 @@ async def test_options_export_blank_token_keeps_existing(
         result["flow_id"],
         {CONF_EXPORT_ENTITIES: ["device_tracker.phone"], CONF_EXPORT_RETRY_QUEUE: True},
     )
-    # Previously chosen device_id is the suggested default.
-    assert suggested_device_id(result, "device_tracker.phone") == "phone"
+    assert suggested_device_id(result) == "phone"
+    assert not token_required(result)  # blank keeps the saved one
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"device_tracker.phone": device("phone")}
+        result["flow_id"], device("phone")
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.data[CONF_EXPORT_TOKEN] == "old"
     assert entry.data[CONF_EXPORT_ENTITY_TOKENS] == {"device_tracker.phone": "tok-alex"}
 
 
 async def test_options_token_only_change_reloads(
     hass: HomeAssistant, mock_client: MagicMock
 ) -> None:
-    entry = make_entry(hass)
-    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_EXPORT_TOKEN: "old"})
+    entry = make_entry(hass, **{CONF_EXPORT_ENTITIES: {"device_tracker.phone": "phone"}})
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_EXPORT_ENTITY_TOKENS: {"device_tracker.phone": "old"}}
+    )
+    hass.states.async_set("device_tracker.phone", "home")
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
@@ -550,11 +563,15 @@ async def test_options_token_only_change_reloads(
         result["flow_id"], {"next_step_id": "export_selection"}
     )
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_EXPORT_TOKEN: "new", CONF_EXPORT_RETRY_QUEUE: True}
+        result["flow_id"],
+        {CONF_EXPORT_ENTITIES: ["device_tracker.phone"], CONF_EXPORT_RETRY_QUEUE: True},
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], device("phone", "new")
     )
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.data[CONF_EXPORT_TOKEN] == "new"
+    assert entry.data[CONF_EXPORT_ENTITY_TOKENS] == {"device_tracker.phone": "new"}
     reload.assert_called_once_with(entry.entry_id)
 
 
@@ -582,10 +599,9 @@ async def test_flow_over_http_api(
         flow,
         {
             CONF_EXPORT_ENTITIES: ["device_tracker.phone"],
-            CONF_EXPORT_TOKEN: "export",
             CONF_EXPORT_RETRY_QUEUE: True,
         },
     )
     assert result["step_id"] == "export_device_ids"
-    result = await post(flow, {"device_tracker.phone": device("phone", "tok-alex")})
+    result = await post(flow, device("phone", "tok-alex"))
     assert result["type"] == "create_entry"

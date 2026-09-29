@@ -16,7 +16,6 @@ from .const import (
     CONF_EXPORT_ENTITIES,
     CONF_EXPORT_ENTITY_TOKENS,
     CONF_EXPORT_RETRY_QUEUE,
-    CONF_EXPORT_TOKEN,
     CONF_READ_TOKEN,
 )
 from .coordinator import GeoPulseCoordinator
@@ -50,7 +49,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeoPulseConfigEntry) -> 
             lambda token: GeoPulseClient(session, base_url, token),
             export_entities,
             entity_tokens=entry.data.get(CONF_EXPORT_ENTITY_TOKENS, {}),
-            default_token=entry.data.get(CONF_EXPORT_TOKEN),
             retry=entry.options.get(CONF_EXPORT_RETRY_QUEUE, True),
         )
         await exporter.async_start()

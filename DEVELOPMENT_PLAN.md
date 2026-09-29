@@ -172,7 +172,7 @@ token from the saved refresh token (access tokens expire after 30 min).
       the selected entities; each move (lat/lng/accuracy changed, state not
       unavailable/unknown) becomes a queue item. Router/zone-only trackers
       without coordinates are skipped.
-- [x] POST to `/api/homeassistant` with its own client on the export
+- [x] POST to `/api/homeassistant` with one client per location-source
       token; timestamp is the state's `last_updated` as UTC
       `...sssZ`; battery from `battery_level` (or `battery`).
 - [x] Queue persisted with `Store` (`geopulse.<entry_id>.export_queue`,
@@ -181,7 +181,7 @@ token from the saved refresh token (access tokens expire after 30 min).
       behind a pending retry. Capped at 5000 (oldest dropped). With the
       retry toggle off, failed points are dropped. Queue removed with the
       entry.
-- [x] Rejected export token → a Repairs issue (the read token's reauth
+- [x] Rejected location-source token → a Repairs issue per account (the read token's reauth
       flow isn't involved); cleared on the next successful send.
 - [x] `device_id` per entity from the config/options flow (Phase 2).
 - [x] Setup no longer fails when the first import poll fails: that would
@@ -191,10 +191,14 @@ token from the saved refresh token (access tokens expire after 30 min).
 
 - [x] **Per-tracker accounts (added 2026-09-29):** GeoPulse keeps one
       timeline per user and ignores `device_id` for grouping, so each
-      person needs their own GeoPulse account. The device-ID step has one
-      section per tracker with `device_id` + optional location-source
-      token (`entry.data[export_entity_tokens]`, `{entity_id: token}`;
-      blank → entry default token, or the stored one in options). The
+      person needs their own GeoPulse account. The device-ID step is one
+      screen per tracker with `device_id` + a **required** location-source
+      token (`entry.data[export_entity_tokens]`, `{entity_id: token}`; in
+      options, blank keeps the stored one). No entry-wide default token —
+      removed after review, since it invites mixing people into one
+      account. First tried form sections per tracker; dropped because the
+      frontend can't translate dynamic section keys and showed raw
+      `device_id` / `token` labels. The
       exporter runs one lane per token; queue items carry `entity_id` so
       they're re-routed to the right account after a restart (tokens are
       never written to the queue file), and points for trackers no longer

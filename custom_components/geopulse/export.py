@@ -236,7 +236,6 @@ class GeoPulseExporter:
         client_factory: Callable[[str], GeoPulseClient],
         device_ids: dict[str, str],
         entity_tokens: dict[str, str],
-        default_token: str | None,
         retry: bool,
     ) -> None:
         self.hass = hass
@@ -246,8 +245,7 @@ class GeoPulseExporter:
         self._lanes: dict[str, _Lane] = {}
         self._lane_for_entity: dict[str, _Lane] = {}
         for entity_id, device_id in device_ids.items():
-            token = entity_tokens.get(entity_id) or default_token
-            if not token:
+            if not (token := entity_tokens.get(entity_id)):
                 # The config flow requires one; only reachable via a
                 # hand-edited entry.
                 _LOGGER.warning("No GeoPulse token for %s; not exporting it", entity_id)

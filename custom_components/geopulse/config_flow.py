@@ -20,7 +20,6 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import section
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
@@ -46,7 +45,6 @@ from .const import (
     CONF_EXPORT_ENTITIES,
     CONF_EXPORT_ENTITY_TOKENS,
     CONF_EXPORT_RETRY_QUEUE,
-    CONF_EXPORT_TOKEN,
     CONF_IMPORT_AGGREGATE_ACCOUNT,
     CONF_IMPORT_FRIEND_IDS,
     CONF_IMPORT_SOURCE_TYPES,
@@ -215,7 +213,6 @@ def _export_schema(hass: HomeAssistant, options: Mapping[str, Any]) -> vol.Schem
                     exclude_entities=own_entities,
                 )
             ),
-            vol.Optional(CONF_EXPORT_TOKEN): PASSWORD_SELECTOR,
             vol.Required(
                 CONF_EXPORT_RETRY_QUEUE,
                 default=options.get(CONF_EXPORT_RETRY_QUEUE, True),
@@ -228,74 +225,81 @@ FIELD_DEVICE_ID = "device_id"
 FIELD_TOKEN = "token"
 
 
-def _device_ids_schema(entity_ids: list[str]) -> vol.Schema:
-    """One section per exported tracker: device_id plus an optional token.
 
-    The token is the location-source token of the GeoPulse account this
-    tracker belongs to. GeoPulse builds one timeline per user and treats
-    device_id as a label only, so each person needs their own account;
-    blank falls back to the entry-level export token.
+class _DeviceIdSteps:
+    """Walk the export_device_ids form once per exported tracker.
+
+    One screen per tracker, not one form with a section each: section keys
+    would be entity ids, which translations can't target, so the frontend
+    would show raw field names. The token is the location-source token of
+    the GeoPulse account the tracker belongs to - GeoPulse builds one
+    timeline per user and treats device_id as a label only, so each person
+    needs their own account. There's deliberately no entry-wide default
+    token: it would invite sending several people into one account. The same
+    token may still be given to several trackers of one person.
     """
-    return vol.Schema(
-        {
-            vol.Required(entity_id): section(
-                vol.Schema(
-                    {
-                        vol.Required(FIELD_DEVICE_ID): TextSelector(),
-                        vol.Optional(FIELD_TOKEN): PASSWORD_SELECTOR,
-                    }
-                ),
-                {"collapsed": False},
-            )
-            for entity_id in entity_ids
-        }
-    )
 
+    def __init__(self, entity_ids: list[str]) -> None:
+        self.entity_ids = entity_ids
+        self.index = 0
+        self.device_ids: dict[str, str] = {}
+        self.tokens: dict[str, str] = {}
+        self._accounts: set[tuple[str, str]] = set()
 
-def _device_ids_suggested(
-    entity_ids: list[str], device_ids: Mapping[str, str]
-) -> dict[str, dict[str, str]]:
-    # Tokens are never echoed back into the form.
-    return {eid: {FIELD_DEVICE_ID: device_ids.get(eid, eid)} for eid in entity_ids}
+    @property
+    def current(self) -> str:
+        return self.entity_ids[self.index]
 
+    @property
+    def done(self) -> bool:
+        return self.index >= len(self.entity_ids)
 
-def _validate_device_ids(
-    entity_ids: list[str],
-    user_input: Mapping[str, Any],
-    default_token: str | None,
-    stored_tokens: Mapping[str, str],
-) -> tuple[dict[str, str], dict[str, str], dict[str, str], str]:
-    """Return ({entity_id: device_id}, {entity_id: token}, errors, entities).
+    def schema(self, stored_tokens: Mapping[str, str]) -> vol.Schema:
+        # Optional only when blank can mean "keep the saved token".
+        token_marker = vol.Optional if self.current in stored_tokens else vol.Required
+        return vol.Schema(
+            {
+                vol.Required(FIELD_DEVICE_ID): TextSelector(),
+                token_marker(FIELD_TOKEN): PASSWORD_SELECTOR,
+            }
+        )
 
-    A blank token keeps the tracker's stored token, else uses the default.
-    Errors are form-level with the affected trackers as a placeholder: every
-    section has the same field names, so a field-keyed error would be
-    ambiguous.
-    """
-    device_ids: dict[str, str] = {}
-    tokens: dict[str, str] = {}
-    problems: dict[str, list[str]] = {}
-    seen: set[tuple[str, str]] = set()
-    for entity_id in entity_ids:
-        values = user_input.get(entity_id) or {}
-        device_id = str(values.get(FIELD_DEVICE_ID, "")).strip()
-        token = (values.get(FIELD_TOKEN) or "").strip() or stored_tokens.get(entity_id)
-        device_ids[entity_id] = device_id
-        if token:
-            tokens[entity_id] = token
-        account = token or default_token
+    def submit(
+        self, user_input: Mapping[str, Any], stored_tokens: Mapping[str, str]
+    ) -> dict[str, str]:
+        """Record the current tracker and advance; return errors instead if invalid."""
+        entity_id = self.current
+        device_id = str(user_input.get(FIELD_DEVICE_ID, "")).strip()
+        token = (user_input.get(FIELD_TOKEN) or "").strip() or stored_tokens.get(entity_id)
         if not device_id:
-            problems.setdefault("device_id_required", []).append(entity_id)
-        elif not account:
-            problems.setdefault("export_token_required", []).append(entity_id)
-        elif (account, device_id) in seen:
+            return {FIELD_DEVICE_ID: "device_id_required"}
+        if not token:
+            return {FIELD_TOKEN: "export_token_required"}
+        if (token, device_id) in self._accounts:
             # Labels only need to be unique within one GeoPulse account.
-            problems.setdefault("duplicate_device_id", []).append(entity_id)
-        seen.add((account or "", device_id))
-    for code in ("device_id_required", "export_token_required", "duplicate_device_id"):
-        if code in problems:
-            return device_ids, tokens, {"base": code}, ", ".join(problems[code])
-    return device_ids, tokens, {}, ""
+            return {FIELD_DEVICE_ID: "duplicate_device_id"}
+        self._accounts.add((token, device_id))
+        self.device_ids[entity_id] = device_id
+        self.tokens[entity_id] = token
+        self.index += 1
+        return {}
+
+    def suggested(
+        self, user_input: Mapping[str, Any] | None, current_ids: Mapping[str, str]
+    ) -> dict[str, Any]:
+        # Tokens are never echoed back into the form.
+        if user_input is not None:
+            return {FIELD_DEVICE_ID: user_input.get(FIELD_DEVICE_ID, "")}
+        return {FIELD_DEVICE_ID: current_ids.get(self.current, self.current)}
+
+    def placeholders(self, hass: HomeAssistant) -> dict[str, str]:
+        state = hass.states.get(self.current)
+        name = state.name if state is not None else self.current
+        return {
+            "entity": f"{name} ({self.current})" if name != self.current else name,
+            "index": str(self.index + 1),
+            "total": str(len(self.entity_ids)),
+        }
 
 
 def _settings_schema(options: Mapping[str, Any]) -> vol.Schema:
@@ -333,7 +337,7 @@ class GeoPulseConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_EXPORT_ENTITIES: {},
         }
         self._account: _Account | None = None
-        self._pending_export: list[str] = []
+        self._device_steps = _DeviceIdSteps([])
 
     @staticmethod
     @callback
@@ -385,26 +389,21 @@ class GeoPulseConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             entities = list(user_input.get(CONF_EXPORT_ENTITIES, []))
-            token = (user_input.get(CONF_EXPORT_TOKEN) or "").strip()
-            # Missing tokens are checked per tracker in the next step.
             if not entities and not _has_import(self._options):
                 errors["base"] = "nothing_selected"
             else:
-                if token:
-                    self._data[CONF_EXPORT_TOKEN] = token
                 self._options[CONF_EXPORT_RETRY_QUEUE] = user_input[
                     CONF_EXPORT_RETRY_QUEUE
                 ]
-                self._pending_export = entities
+                self._device_steps = _DeviceIdSteps(entities)
                 if entities:
                     return await self.async_step_export_device_ids()
                 return self._async_create()
 
-        suggested = {k: v for k, v in (user_input or {}).items() if k != CONF_EXPORT_TOKEN}
         return self.async_show_form(
             step_id="export_selection",
             data_schema=self.add_suggested_values_to_schema(
-                _export_schema(self.hass, self._options), suggested
+                _export_schema(self.hass, self._options), user_input or {}
             ),
             errors=errors,
         )
@@ -412,26 +411,24 @@ class GeoPulseConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_export_device_ids(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        steps = self._device_steps
         errors: dict[str, str] = {}
-        entities = ""
         if user_input is not None:
-            device_ids, tokens, errors, entities = _validate_device_ids(
-                self._pending_export, user_input, self._data.get(CONF_EXPORT_TOKEN), {}
-            )
+            errors = steps.submit(user_input, {})
             if not errors:
-                self._options[CONF_EXPORT_ENTITIES] = device_ids
-                if tokens:
-                    self._data[CONF_EXPORT_ENTITY_TOKENS] = tokens
-                return self._async_create()
+                if steps.done:
+                    self._options[CONF_EXPORT_ENTITIES] = steps.device_ids
+                    self._data[CONF_EXPORT_ENTITY_TOKENS] = steps.tokens
+                    return self._async_create()
+                user_input = None  # next tracker
 
         return self.async_show_form(
             step_id="export_device_ids",
             data_schema=self.add_suggested_values_to_schema(
-                _device_ids_schema(self._pending_export),
-                user_input or _device_ids_suggested(self._pending_export, {}),
+                steps.schema({}), steps.suggested(user_input, {})
             ),
             errors=errors,
-            description_placeholders={"entities": entities},
+            description_placeholders=steps.placeholders(self.hass),
         )
 
     @callback
@@ -480,8 +477,7 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
 
     def __init__(self) -> None:
         self._account: _Account | None = None
-        self._pending_export: list[str] = []
-        self._pending_token: str | None = None
+        self._device_steps = _DeviceIdSteps([])
         self._pending_retry: bool = True
 
     async def async_step_init(
@@ -527,14 +523,10 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
         errors: dict[str, str] = {}
         if user_input is not None:
             entities = list(user_input.get(CONF_EXPORT_ENTITIES, []))
-            # Blank keeps the stored token; the field never echoes it back.
-            token = (user_input.get(CONF_EXPORT_TOKEN) or "").strip() or None
-            # Missing tokens are checked per tracker in the next step.
             if not entities and not _has_import(options):
                 errors["base"] = "nothing_selected"
             else:
-                self._pending_export = entities
-                self._pending_token = token
+                self._device_steps = _DeviceIdSteps(entities)
                 self._pending_retry = user_input[CONF_EXPORT_RETRY_QUEUE]
                 if entities:
                     return await self.async_step_export_device_ids()
@@ -542,7 +534,7 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
 
         suggested = {CONF_EXPORT_ENTITIES: list(options.get(CONF_EXPORT_ENTITIES, {}))}
         if user_input is not None:
-            suggested = {k: v for k, v in user_input.items() if k != CONF_EXPORT_TOKEN}
+            suggested = user_input
         return self.async_show_form(
             step_id="export_selection",
             data_schema=self.add_suggested_values_to_schema(
@@ -554,28 +546,24 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
     async def async_step_export_device_ids(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
-        entities = ""
+        steps = self._device_steps
         data = self.config_entry.data
+        errors: dict[str, str] = {}
         if user_input is not None:
-            device_ids, tokens, errors, entities = _validate_device_ids(
-                self._pending_export,
-                user_input,
-                self._pending_token or data.get(CONF_EXPORT_TOKEN),
-                data.get(CONF_EXPORT_ENTITY_TOKENS, {}),
-            )
+            errors = steps.submit(user_input, data.get(CONF_EXPORT_ENTITY_TOKENS, {}))
             if not errors:
-                return self._async_save_export(device_ids, tokens)
+                if steps.done:
+                    return self._async_save_export(steps.device_ids, steps.tokens)
+                user_input = None  # next tracker
 
-        current = self.config_entry.options.get(CONF_EXPORT_ENTITIES, {})
         return self.async_show_form(
             step_id="export_device_ids",
             data_schema=self.add_suggested_values_to_schema(
-                _device_ids_schema(self._pending_export),
-                user_input or _device_ids_suggested(self._pending_export, current),
+                steps.schema(data.get(CONF_EXPORT_ENTITY_TOKENS, {})),
+                steps.suggested(user_input, self.config_entry.options.get(CONF_EXPORT_ENTITIES, {})),
             ),
             errors=errors,
-            description_placeholders={"entities": entities},
+            description_placeholders=steps.placeholders(self.hass),
         )
 
     @callback
@@ -590,8 +578,6 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
         }
         # Tokens for deselected trackers are dropped with them.
         data = {**entry.data, CONF_EXPORT_ENTITY_TOKENS: tokens}
-        if self._pending_token:
-            data[CONF_EXPORT_TOKEN] = self._pending_token
         if data != dict(entry.data):
             self.hass.config_entries.async_update_entry(entry, data=data)
             # OptionsFlowWithReload only reloads when options change; a

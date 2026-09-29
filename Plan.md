@@ -40,7 +40,7 @@ Two separate GeoPulse credentials, both entered during setup:
 1. **Read API token** — a GeoPulse user API token, sent as `X-API-Key`
    (or `Authorization: Bearer`), used for polling users/devices/timeline
    data (import direction + the card).
-2. **"Home Assistant" Location Source token** — created in GeoPulse under
+2. **"Home Assistant" Location Source token(s)** — created in GeoPulse under
    *Settings → Location Sources → Add New Source → Home Assistant*. Used
    only for the export direction, POSTing to `/api/homeassistant`.
    **Corrected 2026-09-29:** a token doesn't just cover "every exported
@@ -49,8 +49,9 @@ Two separate GeoPulse credentials, both entered during setup:
    label (CSV/GeoJSON export, status panel); timeline, map and friends
    ignore it. So trackers for different people must go to different
    GeoPulse accounts, each with its own Home Assistant location source
-   token. The entry-level token is the default; each exported tracker can
-   override it (§3).
+   token. The token is therefore entered **per exported tracker**, with no
+   entry-wide default (§3) — a default would invite sending several people
+   into one account.
 
    Setting up those accounts (user, location source, friend sharing) is
    left to the user in GeoPulse. Automating it through the admin API was
@@ -109,8 +110,11 @@ The actual model, and what v1 import is built around:
   - `device_id` (export payload field): defaults to the HA `entity_id`,
     editable by the user during setup. Must be unique per GeoPulse
     account, may repeat across accounts.
-  - Location source token of the GeoPulse account it belongs to; blank
-    uses the entry-level default token.
+  - Location source token of the GeoPulse account it belongs to
+    (required; one person's trackers may share a token).
+- One screen per exported tracker ("Export tracker 2 of 3"), not one form
+  with a section per tracker: section keys would be entity ids, which
+  translations can't target, so HA's frontend would show raw field names.
 - Retry queue: **on by default**, one toggle per entry.
 - Friend import is chosen by hand, so a person exported to their own
   account and shared back as a friend just isn't selected for import —

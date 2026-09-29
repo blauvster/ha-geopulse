@@ -20,7 +20,6 @@ from custom_components.geopulse.const import (
     CONF_EXPORT_ENTITIES,
     CONF_EXPORT_ENTITY_TOKENS,
     CONF_EXPORT_RETRY_QUEUE,
-    CONF_EXPORT_TOKEN,
     CONF_IMPORT_AGGREGATE_ACCOUNT,
     CONF_IMPORT_FRIEND_IDS,
     CONF_IMPORT_SOURCE_TYPES,
@@ -43,15 +42,17 @@ async def setup_entry(
     hass: HomeAssistant,
     *,
     retry: bool = True,
-    token: str | None = "export",
     entity_tokens: dict[str, str] | None = None,
     **options: Any,
 ) -> MockConfigEntry:
-    data: dict[str, Any] = {CONF_BASE_URL: "http://geopulse.local", CONF_READ_TOKEN: "read"}
-    if token:
-        data[CONF_EXPORT_TOKEN] = token
-    if entity_tokens:
-        data[CONF_EXPORT_ENTITY_TOKENS] = entity_tokens
+    """Both trackers on one GeoPulse account unless entity_tokens says otherwise."""
+    data: dict[str, Any] = {
+        CONF_BASE_URL: "http://geopulse.local",
+        CONF_READ_TOKEN: "read",
+        CONF_EXPORT_ENTITY_TOKENS: (
+            entity_tokens if entity_tokens is not None else {PHONE: "export", TABLET: "export"}
+        ),
+    }
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id=USER_ID,
@@ -167,7 +168,7 @@ async def test_tracker_without_any_token_not_exported(
     hass: HomeAssistant, mock_api: MagicMock
 ) -> None:
     """Only reachable via a hand-edited entry; the flow requires a token."""
-    await setup_entry(hass, token=None, entity_tokens={TABLET: "tok-alex"})
+    await setup_entry(hass, entity_tokens={TABLET: "tok-alex"})
     hass.states.async_set(PHONE, "not_home", location(1.0))
     hass.states.async_set(TABLET, "not_home", location(2.0))
     await settle(hass)
@@ -367,7 +368,7 @@ def posted(client: MagicMock) -> list[str]:
 async def test_trackers_routed_to_their_account(
     hass: HomeAssistant, clients_by_token: dict[str, MagicMock]
 ) -> None:
-    await setup_entry(hass, token="tok-me", entity_tokens={TABLET: "tok-alex"})
+    await setup_entry(hass, entity_tokens={PHONE: "tok-me", TABLET: "tok-alex"})
     hass.states.async_set(PHONE, "not_home", location(1.0))
     hass.states.async_set(TABLET, "not_home", location(2.0))
     await settle(hass)
@@ -381,7 +382,7 @@ async def test_failing_account_does_not_block_others(
     freezer: FrozenDateTimeFactory,
     issue_registry: ir.IssueRegistry,
 ) -> None:
-    entry = await setup_entry(hass, token="tok-me", entity_tokens={TABLET: "tok-alex"})
+    entry = await setup_entry(hass, entity_tokens={PHONE: "tok-me", TABLET: "tok-alex"})
     alex = clients_by_token["tok-alex"].async_post_homeassistant_location
     alex.side_effect = GeoPulseAuthError("revoked")
 
@@ -405,7 +406,7 @@ async def test_restart_routes_queue_by_entity(
     clients_by_token: dict[str, MagicMock],
     hass_storage: dict[str, Any],
 ) -> None:
-    entry = await setup_entry(hass, token="tok-me", entity_tokens={TABLET: "tok-alex"})
+    entry = await setup_entry(hass, entity_tokens={PHONE: "tok-me", TABLET: "tok-alex"})
     await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     point = {"timestamp": "2026-09-29T12:00:00+00:00", "latitude": 1.0, "longitude": 2.0,

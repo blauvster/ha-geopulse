@@ -36,16 +36,14 @@ FRIENDS_TRAILS_MAX_MINUTES = 1440
 # Config entry / options keys.
 CONF_BASE_URL = "base_url"
 CONF_READ_TOKEN = "read_token"
-CONF_EXPORT_TOKEN = "export_token"
 CONF_IMPORT_SOURCE_TYPES = "import_source_types"
 CONF_IMPORT_AGGREGATE_ACCOUNT = "import_aggregate_account"
 CONF_IMPORT_FRIEND_IDS = "import_friend_ids"
 # {entity_id: device_id} - device_id is the payload field GeoPulse uses to
 # tell exported devices apart; defaults to the entity_id (Plan.md §3).
 CONF_EXPORT_ENTITIES = "export_entities"
-# {entity_id: location-source token} in entry.data, for trackers exported to
-# a different GeoPulse account than the entry-level CONF_EXPORT_TOKEN. GeoPulse
-# keeps one timeline per user, so each person needs their own account.
+# {entity_id: location-source token} in entry.data. GeoPulse keeps one
+# timeline per user, so each person's trackers go to their own account.
 CONF_EXPORT_ENTITY_TOKENS = "export_entity_tokens"
 CONF_EXPORT_RETRY_QUEUE = "export_retry_queue"
 CONF_POLL_INTERVAL = "poll_interval"
