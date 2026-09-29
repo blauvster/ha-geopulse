@@ -20,6 +20,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
@@ -43,6 +44,7 @@ from .api import Friend, GeoPulseApiError, GeoPulseAuthError, GeoPulseClient
 from .const import (
     CONF_BASE_URL,
     CONF_EXPORT_ENTITIES,
+    CONF_EXPORT_ENTITY_TOKENS,
     CONF_EXPORT_RETRY_QUEUE,
     CONF_EXPORT_TOKEN,
     CONF_IMPORT_AGGREGATE_ACCOUNT,
@@ -222,25 +224,78 @@ def _export_schema(hass: HomeAssistant, options: Mapping[str, Any]) -> vol.Schem
     )
 
 
+FIELD_DEVICE_ID = "device_id"
+FIELD_TOKEN = "token"
+
+
 def _device_ids_schema(entity_ids: list[str]) -> vol.Schema:
-    return vol.Schema({vol.Required(entity_id): TextSelector() for entity_id in entity_ids})
+    """One section per exported tracker: device_id plus an optional token.
+
+    The token is the location-source token of the GeoPulse account this
+    tracker belongs to. GeoPulse builds one timeline per user and treats
+    device_id as a label only, so each person needs their own account;
+    blank falls back to the entry-level export token.
+    """
+    return vol.Schema(
+        {
+            vol.Required(entity_id): section(
+                vol.Schema(
+                    {
+                        vol.Required(FIELD_DEVICE_ID): TextSelector(),
+                        vol.Optional(FIELD_TOKEN): PASSWORD_SELECTOR,
+                    }
+                ),
+                {"collapsed": False},
+            )
+            for entity_id in entity_ids
+        }
+    )
+
+
+def _device_ids_suggested(
+    entity_ids: list[str], device_ids: Mapping[str, str]
+) -> dict[str, dict[str, str]]:
+    # Tokens are never echoed back into the form.
+    return {eid: {FIELD_DEVICE_ID: device_ids.get(eid, eid)} for eid in entity_ids}
 
 
 def _validate_device_ids(
-    entity_ids: list[str], user_input: Mapping[str, Any]
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Return ({entity_id: device_id}, errors)."""
-    device_ids = {eid: str(user_input.get(eid, "")).strip() for eid in entity_ids}
-    errors: dict[str, str] = {}
-    seen: set[str] = set()
-    for entity_id, device_id in device_ids.items():
+    entity_ids: list[str],
+    user_input: Mapping[str, Any],
+    default_token: str | None,
+    stored_tokens: Mapping[str, str],
+) -> tuple[dict[str, str], dict[str, str], dict[str, str], str]:
+    """Return ({entity_id: device_id}, {entity_id: token}, errors, entities).
+
+    A blank token keeps the tracker's stored token, else uses the default.
+    Errors are form-level with the affected trackers as a placeholder: every
+    section has the same field names, so a field-keyed error would be
+    ambiguous.
+    """
+    device_ids: dict[str, str] = {}
+    tokens: dict[str, str] = {}
+    problems: dict[str, list[str]] = {}
+    seen: set[tuple[str, str]] = set()
+    for entity_id in entity_ids:
+        values = user_input.get(entity_id) or {}
+        device_id = str(values.get(FIELD_DEVICE_ID, "")).strip()
+        token = (values.get(FIELD_TOKEN) or "").strip() or stored_tokens.get(entity_id)
+        device_ids[entity_id] = device_id
+        if token:
+            tokens[entity_id] = token
+        account = token or default_token
         if not device_id:
-            errors[entity_id] = "device_id_required"
-        elif device_id in seen:
-            # GeoPulse tells exported devices apart only by device_id.
-            errors[entity_id] = "duplicate_device_id"
-        seen.add(device_id)
-    return device_ids, errors
+            problems.setdefault("device_id_required", []).append(entity_id)
+        elif not account:
+            problems.setdefault("export_token_required", []).append(entity_id)
+        elif (account, device_id) in seen:
+            # Labels only need to be unique within one GeoPulse account.
+            problems.setdefault("duplicate_device_id", []).append(entity_id)
+        seen.add((account or "", device_id))
+    for code in ("device_id_required", "export_token_required", "duplicate_device_id"):
+        if code in problems:
+            return device_ids, tokens, {"base": code}, ", ".join(problems[code])
+    return device_ids, tokens, {}, ""
 
 
 def _settings_schema(options: Mapping[str, Any]) -> vol.Schema:
@@ -331,9 +386,8 @@ class GeoPulseConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             entities = list(user_input.get(CONF_EXPORT_ENTITIES, []))
             token = (user_input.get(CONF_EXPORT_TOKEN) or "").strip()
-            if entities and not token:
-                errors[CONF_EXPORT_TOKEN] = "export_token_required"
-            elif not entities and not _has_import(self._options):
+            # Missing tokens are checked per tracker in the next step.
+            if not entities and not _has_import(self._options):
                 errors["base"] = "nothing_selected"
             else:
                 if token:
@@ -359,19 +413,25 @@ class GeoPulseConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        entities = ""
         if user_input is not None:
-            device_ids, errors = _validate_device_ids(self._pending_export, user_input)
+            device_ids, tokens, errors, entities = _validate_device_ids(
+                self._pending_export, user_input, self._data.get(CONF_EXPORT_TOKEN), {}
+            )
             if not errors:
                 self._options[CONF_EXPORT_ENTITIES] = device_ids
+                if tokens:
+                    self._data[CONF_EXPORT_ENTITY_TOKENS] = tokens
                 return self._async_create()
 
         return self.async_show_form(
             step_id="export_device_ids",
             data_schema=self.add_suggested_values_to_schema(
                 _device_ids_schema(self._pending_export),
-                user_input or {eid: eid for eid in self._pending_export},
+                user_input or _device_ids_suggested(self._pending_export, {}),
             ),
             errors=errors,
+            description_placeholders={"entities": entities},
         )
 
     @callback
@@ -469,9 +529,8 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
             entities = list(user_input.get(CONF_EXPORT_ENTITIES, []))
             # Blank keeps the stored token; the field never echoes it back.
             token = (user_input.get(CONF_EXPORT_TOKEN) or "").strip() or None
-            if entities and not (token or self.config_entry.data.get(CONF_EXPORT_TOKEN)):
-                errors[CONF_EXPORT_TOKEN] = "export_token_required"
-            elif not entities and not _has_import(options):
+            # Missing tokens are checked per tracker in the next step.
+            if not entities and not _has_import(options):
                 errors["base"] = "nothing_selected"
             else:
                 self._pending_export = entities
@@ -479,7 +538,7 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
                 self._pending_retry = user_input[CONF_EXPORT_RETRY_QUEUE]
                 if entities:
                     return await self.async_step_export_device_ids()
-                return self._async_save_export({})
+                return self._async_save_export({}, {})
 
         suggested = {CONF_EXPORT_ENTITIES: list(options.get(CONF_EXPORT_ENTITIES, {}))}
         if user_input is not None:
@@ -496,34 +555,45 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         errors: dict[str, str] = {}
+        entities = ""
+        data = self.config_entry.data
         if user_input is not None:
-            device_ids, errors = _validate_device_ids(self._pending_export, user_input)
+            device_ids, tokens, errors, entities = _validate_device_ids(
+                self._pending_export,
+                user_input,
+                self._pending_token or data.get(CONF_EXPORT_TOKEN),
+                data.get(CONF_EXPORT_ENTITY_TOKENS, {}),
+            )
             if not errors:
-                return self._async_save_export(device_ids)
+                return self._async_save_export(device_ids, tokens)
 
         current = self.config_entry.options.get(CONF_EXPORT_ENTITIES, {})
         return self.async_show_form(
             step_id="export_device_ids",
             data_schema=self.add_suggested_values_to_schema(
                 _device_ids_schema(self._pending_export),
-                user_input
-                or {eid: current.get(eid, eid) for eid in self._pending_export},
+                user_input or _device_ids_suggested(self._pending_export, current),
             ),
             errors=errors,
+            description_placeholders={"entities": entities},
         )
 
     @callback
-    def _async_save_export(self, device_ids: dict[str, str]) -> ConfigFlowResult:
+    def _async_save_export(
+        self, device_ids: dict[str, str], tokens: dict[str, str]
+    ) -> ConfigFlowResult:
         entry = self.config_entry
         options = {
             **entry.options,
             CONF_EXPORT_ENTITIES: device_ids,
             CONF_EXPORT_RETRY_QUEUE: self._pending_retry,
         }
-        if self._pending_token and self._pending_token != entry.data.get(CONF_EXPORT_TOKEN):
-            self.hass.config_entries.async_update_entry(
-                entry, data={**entry.data, CONF_EXPORT_TOKEN: self._pending_token}
-            )
+        # Tokens for deselected trackers are dropped with them.
+        data = {**entry.data, CONF_EXPORT_ENTITY_TOKENS: tokens}
+        if self._pending_token:
+            data[CONF_EXPORT_TOKEN] = self._pending_token
+        if data != dict(entry.data):
+            self.hass.config_entries.async_update_entry(entry, data=data)
             # OptionsFlowWithReload only reloads when options change; a
             # token-only change still needs the export side to pick it up.
             if options == dict(entry.options):

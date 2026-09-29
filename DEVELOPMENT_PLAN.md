@@ -163,7 +163,8 @@ official HA 2026.9.4 image with the integration mounted read-only. Config
 flow driven over HA's REST API against production GeoPulse created all
 four trackers (account, Colota, two friends) and loaded cleanly; history
 API confirmed no coordinates recorded. Dev HA state and credentials live
-in `.ha-config/` (git-ignored).
+in `.ha-config/` (git-ignored); `docker/ha-token.sh` prints a fresh access
+token from the saved refresh token (access tokens expire after 30 min).
 
 ## Phase 4 — Export — done
 
@@ -187,6 +188,18 @@ in `.ha-config/` (git-ignored).
       have stopped the exporter during exactly the outage the queue is for.
       Trackers start unavailable and recover on the next poll.
 - [x] Tests: 22 in `tests/test_export.py`; queue behaviours mutation-checked.
+
+- [x] **Per-tracker accounts (added 2026-09-29):** GeoPulse keeps one
+      timeline per user and ignores `device_id` for grouping, so each
+      person needs their own GeoPulse account. The device-ID step has one
+      section per tracker with `device_id` + optional location-source
+      token (`entry.data[export_entity_tokens]`, `{entity_id: token}`;
+      blank → entry default token, or the stored one in options). The
+      exporter runs one lane per token; queue items carry `entity_id` so
+      they're re-routed to the right account after a restart (tokens are
+      never written to the queue file), and points for trackers no longer
+      exported are dropped. Account setup and friend sharing stay manual
+      (admin-API automation rejected — see Plan.md §2).
 
 **Live findings (2026-09-29, one test point, `device_id` `ha-geopulse-test`):**
 - Success is an empty `200` with no Content-Type. `response.json()`
@@ -234,6 +247,6 @@ account's own history still needs research below.
 
 ## Current status
 
-Phases 0–4 done; 82 tests passing in Docker (`docker/run-tests.sh`).
+Phases 0–4 done; 86 tests passing in Docker (`docker/run-tests.sh`).
 Import verified end to end against production; export payload verified
 with one live point. Next: Phase 5 (Lovelace card).

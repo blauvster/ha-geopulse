@@ -1,8 +1,9 @@
 """Tests for the export direction (HA -> GeoPulse)."""
 
 from datetime import datetime, timedelta, timezone
+from collections.abc import Generator
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from freezegun.api import FrozenDateTimeFactory
@@ -17,6 +18,7 @@ from custom_components.geopulse.api import GeoPulseApiError, GeoPulseAuthError
 from custom_components.geopulse.const import (
     CONF_BASE_URL,
     CONF_EXPORT_ENTITIES,
+    CONF_EXPORT_ENTITY_TOKENS,
     CONF_EXPORT_RETRY_QUEUE,
     CONF_EXPORT_TOKEN,
     CONF_IMPORT_AGGREGATE_ACCOUNT,
@@ -38,11 +40,18 @@ def location(lat: float, lng: float = 2.0, **extra: Any) -> dict[str, Any]:
 
 
 async def setup_entry(
-    hass: HomeAssistant, *, retry: bool = True, token: str | None = "export", **options: Any
+    hass: HomeAssistant,
+    *,
+    retry: bool = True,
+    token: str | None = "export",
+    entity_tokens: dict[str, str] | None = None,
+    **options: Any,
 ) -> MockConfigEntry:
-    data = {CONF_BASE_URL: "http://geopulse.local", CONF_READ_TOKEN: "read"}
+    data: dict[str, Any] = {CONF_BASE_URL: "http://geopulse.local", CONF_READ_TOKEN: "read"}
     if token:
         data[CONF_EXPORT_TOKEN] = token
+    if entity_tokens:
+        data[CONF_EXPORT_ENTITY_TOKENS] = entity_tokens
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id=USER_ID,
@@ -84,8 +93,9 @@ def sent(mock_api: MagicMock) -> list[tuple[str, float]]:
 
 def test_payload_fields() -> None:
     state = State(PHONE, "not_home", location(1.0, battery_level=55, altitude=30, speed=2.5))
-    payload = build_payload("phone", state, None)
+    payload = build_payload(PHONE, "phone", state, None)
     assert payload == {
+        "entity_id": PHONE,
         "device_id": "phone",
         "timestamp": state.last_updated.isoformat(),
         "latitude": 1.0,
@@ -99,7 +109,7 @@ def test_payload_fields() -> None:
 
 def test_payload_battery_attribute_fallback() -> None:
     state = State(PHONE, "not_home", location(1.0, battery=40))
-    assert build_payload("phone", state, None)["battery_level"] == 40
+    assert build_payload(PHONE, "phone", state, None)["battery_level"] == 40
 
 
 @pytest.mark.parametrize(
@@ -112,13 +122,13 @@ def test_payload_battery_attribute_fallback() -> None:
     ],
 )
 def test_payload_skipped(new_state: State | None) -> None:
-    assert build_payload("phone", new_state, None) is None
+    assert build_payload(PHONE, "phone", new_state, None) is None
 
 
 def test_payload_skipped_when_not_moved() -> None:
     old = State(PHONE, "not_home", location(1.0, battery_level=50))
     new = State(PHONE, "not_home", location(1.0, battery_level=49))
-    assert build_payload("phone", new, old) is None
+    assert build_payload(PHONE, "phone", new, old) is None
 
 
 # --- exporter ------------------------------------------------------------
@@ -153,9 +163,15 @@ async def test_export_client_uses_export_token(hass: HomeAssistant, mock_api: Ma
     assert tokens == ["export", "read"]
 
 
-async def test_no_exporter_without_token(hass: HomeAssistant, mock_api: MagicMock) -> None:
-    entry = await setup_entry(hass, token=None)
-    assert entry.runtime_data.exporter is None
+async def test_tracker_without_any_token_not_exported(
+    hass: HomeAssistant, mock_api: MagicMock
+) -> None:
+    """Only reachable via a hand-edited entry; the flow requires a token."""
+    await setup_entry(hass, token=None, entity_tokens={TABLET: "tok-alex"})
+    hass.states.async_set(PHONE, "not_home", location(1.0))
+    hass.states.async_set(TABLET, "not_home", location(2.0))
+    await settle(hass)
+    assert sent(mock_api) == [("tablet", 2.0)]
 
 
 async def test_export_works_while_import_down(hass: HomeAssistant, mock_api: MagicMock) -> None:
@@ -263,7 +279,7 @@ async def test_queue_cap(hass: HomeAssistant, mock_api: MagicMock) -> None:
             hass.states.async_set(PHONE, "not_home", location(lat))
             await settle(hass)
     exporter = entry.runtime_data.exporter
-    assert [p["latitude"] for p in exporter._queue] == [2.0, 3.0]
+    assert [p["latitude"] for p in exporter._snapshot()] == [2.0, 3.0]
 
 
 async def test_auth_error_raises_and_clears_issue(
@@ -278,8 +294,15 @@ async def test_auth_error_raises_and_clears_issue(
     hass.states.async_set(PHONE, "not_home", location(1.0))
     await settle(hass)
 
-    issue_id = f"export_auth_failed_{entry.entry_id}"
-    assert issue_registry.async_get_issue(DOMAIN, issue_id) is not None
+    issues = [
+        i for (domain, i) in issue_registry.issues
+        if domain == DOMAIN and i.startswith(f"export_auth_failed_{entry.entry_id}_")
+    ]
+    assert len(issues) == 1
+    issue_id = issues[0]
+    assert "export" not in issue_id.removeprefix("export_auth_failed_")  # no raw token
+    issue = issue_registry.async_get_issue(DOMAIN, issue_id)
+    assert issue.translation_placeholders["entities"] == f"{PHONE}, {TABLET}"
     # Import side is unaffected: no reauth for the read token.
     assert not hass.config_entries.flow.async_progress()
 
@@ -318,3 +341,87 @@ async def test_timestamp_round_trips_through_queue(
     hass.states.async_set(PHONE, "not_home", location(1.0))
     await settle(hass)
     assert mock_api.async_post_homeassistant_location.call_args.kwargs["timestamp"] == when
+
+
+# --- one lane per GeoPulse account ---------------------------------------
+
+
+@pytest.fixture
+def clients_by_token(mock_api: MagicMock) -> Generator[dict[str, MagicMock]]:
+    """A distinct export client per token (the read client stays mock_api)."""
+    clients: dict[str, MagicMock] = {}
+
+    def make(session: Any, base_url: str, token: str) -> MagicMock:
+        if token == "read":
+            return mock_api
+        return clients.setdefault(token, MagicMock(async_post_homeassistant_location=AsyncMock()))
+
+    with patch("custom_components.geopulse.GeoPulseClient", side_effect=make):
+        yield clients
+
+
+def posted(client: MagicMock) -> list[str]:
+    return [c.kwargs["device_id"] for c in client.async_post_homeassistant_location.call_args_list]
+
+
+async def test_trackers_routed_to_their_account(
+    hass: HomeAssistant, clients_by_token: dict[str, MagicMock]
+) -> None:
+    await setup_entry(hass, token="tok-me", entity_tokens={TABLET: "tok-alex"})
+    hass.states.async_set(PHONE, "not_home", location(1.0))
+    hass.states.async_set(TABLET, "not_home", location(2.0))
+    await settle(hass)
+    assert posted(clients_by_token["tok-me"]) == ["phone"]
+    assert posted(clients_by_token["tok-alex"]) == ["tablet"]
+
+
+async def test_failing_account_does_not_block_others(
+    hass: HomeAssistant,
+    clients_by_token: dict[str, MagicMock],
+    freezer: FrozenDateTimeFactory,
+    issue_registry: ir.IssueRegistry,
+) -> None:
+    entry = await setup_entry(hass, token="tok-me", entity_tokens={TABLET: "tok-alex"})
+    alex = clients_by_token["tok-alex"].async_post_homeassistant_location
+    alex.side_effect = GeoPulseAuthError("revoked")
+
+    hass.states.async_set(TABLET, "not_home", location(1.0))
+    await settle(hass)
+    hass.states.async_set(PHONE, "not_home", location(2.0))
+    hass.states.async_set(PHONE, "not_home", location(3.0))
+    await settle(hass)
+
+    assert len(posted(clients_by_token["tok-me"])) == 2
+    assert entry.runtime_data.exporter.queue_length == 1  # only Alex's point waits
+    issues = [i for (d, i) in issue_registry.issues if d == DOMAIN]
+    assert len(issues) == 1
+    assert issue_registry.async_get_issue(DOMAIN, issues[0]).translation_placeholders[
+        "entities"
+    ] == TABLET
+
+
+async def test_restart_routes_queue_by_entity(
+    hass: HomeAssistant,
+    clients_by_token: dict[str, MagicMock],
+    hass_storage: dict[str, Any],
+) -> None:
+    entry = await setup_entry(hass, token="tok-me", entity_tokens={TABLET: "tok-alex"})
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    point = {"timestamp": "2026-09-29T12:00:00+00:00", "latitude": 1.0, "longitude": 2.0,
+             "accuracy": None, "altitude": None, "speed": None, "battery_level": None}
+    hass_storage[storage_key(entry.entry_id)] = {
+        "version": 1,
+        "key": storage_key(entry.entry_id),
+        "data": [
+            {**point, "entity_id": TABLET, "device_id": "tablet"},
+            {**point, "entity_id": PHONE, "device_id": "phone"},
+            # No longer exported: dropped rather than sent to some account.
+            {**point, "entity_id": "device_tracker.gone", "device_id": "gone"},
+        ],
+    }
+    await hass.config_entries.async_setup(entry.entry_id)
+    await settle(hass)
+    assert posted(clients_by_token["tok-alex"]) == ["tablet"]
+    assert posted(clients_by_token["tok-me"]) == ["phone"]
+    assert entry.runtime_data.exporter.queue_length == 0

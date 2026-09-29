@@ -42,9 +42,22 @@ Two separate GeoPulse credentials, both entered during setup:
    data (import direction + the card).
 2. **"Home Assistant" Location Source token** — created in GeoPulse under
    *Settings → Location Sources → Add New Source → Home Assistant*. Used
-   only for the export direction, POSTing to `/api/homeassistant`. One
-   token covers every exported device; GeoPulse tells devices apart via
-   the `device_id` field in each payload, not the token.
+   only for the export direction, POSTing to `/api/homeassistant`.
+   **Corrected 2026-09-29:** a token doesn't just cover "every exported
+   device" — it identifies a GeoPulse *user*, and GeoPulse builds one
+   timeline per user. `device_id` is stored on each point but only as a
+   label (CSV/GeoJSON export, status panel); timeline, map and friends
+   ignore it. So trackers for different people must go to different
+   GeoPulse accounts, each with its own Home Assistant location source
+   token. The entry-level token is the default; each exported tracker can
+   override it (§3).
+
+   Setting up those accounts (user, location source, friend sharing) is
+   left to the user in GeoPulse. Automating it through the admin API was
+   considered and rejected: there's no admin "create user" endpoint (only
+   invitation → registration → password login), no admin way to create a
+   location source for another user, and it would mean handling an admin
+   token with full server control.
 
 Handle `401`/expired-token responses with `ConfigEntryAuthFailed` to
 trigger HA's reauth flow.
@@ -93,9 +106,15 @@ The actual model, and what v1 import is built around:
   needed).
 - Multi-select which to export.
 - Per selected entity:
-  - Retry queue: **on by default**.
   - `device_id` (export payload field): defaults to the HA `entity_id`,
-    editable by the user during setup.
+    editable by the user during setup. Must be unique per GeoPulse
+    account, may repeat across accounts.
+  - Location source token of the GeoPulse account it belongs to; blank
+    uses the entry-level default token.
+- Retry queue: **on by default**, one toggle per entry.
+- Friend import is chosen by hand, so a person exported to their own
+  account and shared back as a friend just isn't selected for import —
+  no automatic loop detection.
 
 ### Options Flow
 - Add/remove import or export entities after initial setup.
@@ -164,6 +183,9 @@ The actual model, and what v1 import is built around:
   unknown values are sent as `0.0` altitude and battery level `0`. Worth
   reporting upstream; a `0` battery on a tracker without one is the
   visible side effect.
+- One delivery lane per token (= per GeoPulse account): its own queue,
+  backoff and Repairs issue, so one account's bad token or outage doesn't
+  hold up the others.
 - **Retry queue** (default on): buffer failed POSTs (GeoPulse unreachable,
   network blip) and retry rather than silently dropping the point, as the
   manual method does today. Persisted to disk (HA `Store` helper) so

@@ -20,16 +20,19 @@
       },
       "export_selection": {
         "title": "Export to GeoPulse",
-        "description": "Choose Home Assistant device trackers to send to GeoPulse. Trackers created by this integration aren't offered. Exporting needs a Home Assistant location source token (GeoPulse → Settings → Location Sources → Add New Source → Home Assistant); you can also add it later from the integration's options.",
+        "description": "Choose Home Assistant device trackers to send to GeoPulse. Trackers created by this integration aren't offered. Each person should have their own GeoPulse account; you'll enter a token per tracker in the next step.",
         "data": {
           "export_entities": "Device trackers to export",
-          "export_token": "Home Assistant location source token",
+          "export_token": "Default location source token",
           "export_retry_queue": "Queue and retry failed uploads"
+        },
+        "data_description": {
+          "export_token": "Used for trackers that don't get their own token in the next step. Each GeoPulse account (one per person) has its own Home Assistant location source token."
         }
       },
       "export_device_ids": {
         "title": "Export device IDs",
-        "description": "GeoPulse tells exported devices apart by device ID. Each defaults to the entity ID."
+        "description": "For each tracker: the device ID GeoPulse labels its points with, and the Home Assistant location source token of the GeoPulse account it belongs to.\n\nGeoPulse keeps one timeline per account and doesn't separate devices within it, so trackers for different people need different accounts. Create an account for each person in GeoPulse, add a Home Assistant location source there (Settings → Location Sources), and paste its token here. Leave the token blank to use the default token."
       },
       "reauth_confirm": {
         "title": "Re-authenticate GeoPulse",
@@ -44,10 +47,10 @@
       "invalid_auth": "GeoPulse rejected the API token.",
       "cannot_connect": "Couldn't reach GeoPulse at that URL.",
       "unknown": "Unexpected error; check the Home Assistant logs.",
-      "export_token_required": "A location source token is needed to export device trackers.",
+      "export_token_required": "No token for: {entities}. Enter a location source token for these trackers, or set a default token in the previous step.",
       "nothing_selected": "Select at least one thing to import or export.",
-      "device_id_required": "Device ID can't be empty.",
-      "duplicate_device_id": "Each exported tracker needs a different device ID."
+      "device_id_required": "Device ID can't be empty for: {entities}.",
+      "duplicate_device_id": "Trackers sent to the same GeoPulse account need different device IDs: {entities}."
     },
     "abort": {
       "already_configured": "This GeoPulse account is already set up.",
@@ -79,13 +82,16 @@
         "description": "Leave the token blank to keep the one already saved.",
         "data": {
           "export_entities": "Device trackers to export",
-          "export_token": "Home Assistant location source token",
+          "export_token": "Default location source token",
           "export_retry_queue": "Queue and retry failed uploads"
+        },
+        "data_description": {
+          "export_token": "Used for trackers that don't get their own token in the next step. Each GeoPulse account (one per person) has its own Home Assistant location source token."
         }
       },
       "export_device_ids": {
         "title": "Export device IDs",
-        "description": "GeoPulse tells exported devices apart by device ID."
+        "description": "For each tracker: the device ID GeoPulse labels its points with, and the Home Assistant location source token of the GeoPulse account it belongs to.\n\nGeoPulse keeps one timeline per account and doesn't separate devices within it, so trackers for different people need different accounts. Create an account for each person in GeoPulse, add a Home Assistant location source there (Settings → Location Sources), and paste its token here. Leave the token blank to use the default token or keep the one already saved."
       },
       "settings": {
         "title": "Settings",
@@ -99,10 +105,10 @@
       }
     },
     "error": {
-      "export_token_required": "A location source token is needed to export device trackers.",
+      "export_token_required": "No token for: {entities}. Enter a location source token for these trackers, or set a default token in the previous step.",
       "nothing_selected": "Select at least one thing to import or export.",
-      "device_id_required": "Device ID can't be empty.",
-      "duplicate_device_id": "Each exported tracker needs a different device ID."
+      "device_id_required": "Device ID can't be empty for: {entities}.",
+      "duplicate_device_id": "Trackers sent to the same GeoPulse account need different device IDs: {entities}."
     },
     "abort": {
       "invalid_auth": "GeoPulse rejected the API token; re-authenticate the integration first.",
@@ -113,7 +119,7 @@
   "issues": {
     "export_auth_failed": {
       "title": "GeoPulse export token rejected",
-      "description": "GeoPulse rejected the Home Assistant location source token for {title}, so location export has stopped. Points are kept in the retry queue if it's enabled. Create a new token in GeoPulse (Settings → Location Sources) and enter it under the integration's options → Export selection."
+      "description": "GeoPulse rejected the location source token used for {entities} ({title}), so exporting them has stopped. Points are kept in the retry queue if it's enabled. Check the Home Assistant location source in that person's GeoPulse account and enter its token again under the integration's options → Export selection."
     }
   }
 }

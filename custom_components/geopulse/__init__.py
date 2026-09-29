@@ -14,6 +14,7 @@ from .api import GeoPulseClient
 from .const import (
     CONF_BASE_URL,
     CONF_EXPORT_ENTITIES,
+    CONF_EXPORT_ENTITY_TOKENS,
     CONF_EXPORT_RETRY_QUEUE,
     CONF_EXPORT_TOKEN,
     CONF_READ_TOKEN,
@@ -40,15 +41,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: GeoPulseConfigEntry) -> 
     session = async_get_clientsession(hass)
     base_url = entry.data[CONF_BASE_URL]
     exporter = None
-    export_entities = entry.options.get(CONF_EXPORT_ENTITIES, {})
-    if export_entities and (export_token := entry.data.get(CONF_EXPORT_TOKEN)):
-        # Separate client: the export endpoint authenticates with the
-        # location-source token, not the read token (Plan.md §2).
+    if export_entities := entry.options.get(CONF_EXPORT_ENTITIES, {}):
+        # Separate clients: the export endpoint authenticates with
+        # location-source tokens, not the read token (Plan.md §2).
         exporter = GeoPulseExporter(
             hass,
             entry,
-            GeoPulseClient(session, base_url, export_token),
+            lambda token: GeoPulseClient(session, base_url, token),
             export_entities,
+            entity_tokens=entry.data.get(CONF_EXPORT_ENTITY_TOKENS, {}),
+            default_token=entry.data.get(CONF_EXPORT_TOKEN),
             retry=entry.options.get(CONF_EXPORT_RETRY_QUEUE, True),
         )
         await exporter.async_start()
