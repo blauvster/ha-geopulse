@@ -1,0 +1,15 @@
+# Linux test runner for the integration - pytest-homeassistant-custom-component
+# (and homeassistant itself) needs POSIX-only modules like fcntl.
+ARG PYTHON_VERSION=3.14
+FROM python:${PYTHON_VERSION}-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements-test.txt .
+RUN pip install --no-cache-dir -r requirements-test.txt
+
+# Source is bind-mounted at runtime so edits don't need a rebuild.
+CMD ["pytest", "-v"]
