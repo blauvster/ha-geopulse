@@ -102,6 +102,14 @@ load (`fcntl` is POSIX-only). Enabling the plugin surfaced two things:
       driving the flow through HA's HTTP API (the frontend's path) so
       selector serialization is covered
 
+**Live server check (2026-09-29):** `docker/probe.sh` runs a read-only,
+redacted probe against the server in `.env.local` (git-ignored). It found
+`API_PATH_GPS_POINTS` was wrong (`/api/gps/points` → 405; the list is
+`GET /api/gps`), and that an unrecognised `sourceTypes` value makes the
+server return unfiltered points, which `api.py` now guards against.
+Everything else in Plan.md §12 matched, including `userId` on source
+configs and friends (the unique-ID source).
+
 **Decisions made here:**
 - `entry.data` holds `base_url`, `read_token`, `export_token`;
   `entry.options` holds all selections/settings. `export_entities` is

@@ -255,7 +255,10 @@ The actual model, and what v1 import is built around:
 
 ## 12. Confirmed API Reference (v1 scope)
 
-Verified 2026-09-21 directly against `tess1o/geopulse` backend source
+Live-verified 2026-09-29 against a production server with
+`scripts/probe_geopulse.py` (read-only; run via `docker/probe.sh`): all rows
+below match except the points-list path, now corrected. Originally verified
+2026-09-21 directly against `tess1o/geopulse` backend source
 (`backend/src/main/java/org/github/tess1o/geopulse/...`), not just docs —
 the docs site's own OpenAPI export has empty response schemas for most
 GET endpoints. Base path is the GeoPulse server root; all `User API`
@@ -267,7 +270,7 @@ and return the envelope `{"status": "success"|"error", "message": str|null,
 |---|---|---|
 | List own GPS source configs | `GET /api/gps/source/` | Returns a **raw** `List<GpsSourceConfigDTO>` (no envelope). Fields: `id, type, username, token, deviceId, hasPayloadEncryptionSecret, userId, active, connectionType, filterInaccurateData, maxAllowedAccuracy, maxAllowedSpeed, enableDuplicateDetection, duplicateDetectionThresholdMinutes`. `type` is one of the `GpsSourceType` enum (below) — filter out `HOME_ASSISTANT` on the import side. |
 | Account-wide last known position | `GET /api/gps/last-known-position` | Envelope `data` is a single `GpsPointDTO` or `null`. No device/source scoping — this is the latest point across *all* the account's sources. |
-| Latest point for one source type | `GET /api/gps/points?sourceTypes=<TYPE>&limit=1&sortBy=timestamp&sortOrder=desc` | `GpsPointDTO` fields: `id, timestamp, coordinates{lat,lng}, accuracy, battery, velocity, altitude, sourceType`. No `deviceId` field — can't distinguish two devices sharing one `sourceType`. |
+| Latest point for one source type | `GET /api/gps?sourceTypes=<TYPE>&limit=1&sortBy=timestamp&sortOrder=desc` | **Corrected 2026-09-29 against a live server:** the path is `/api/gps`, not `/api/gps/points` (that one is POST-only mobile ingest and returns 405 to GET). `data` is `GpsPointPageDTO` `{data: [GpsPointDTO], pagination: {page, limit, total, totalPages}}`. `GpsPointDTO` fields: `id, timestamp, coordinates{lat,lng}, accuracy, battery, velocity, altitude, sourceType` (plus `telemetryGpsData`, `telemetryCurrentPopup`, unused). No `deviceId` field — can't distinguish two devices sharing one `sourceType`. `sourceTypes` is comma-separated; an unrecognised value is silently ignored server-side (no filter applied), so the client checks the returned `sourceType`. |
 | List friends | `GET /api/friends` | `data` is `List<FriendInfoDTO>`: `userId, friendId, avatar, lastLongitude, lastLatitude, fullName, email, lastSeen, lastBattery, lastLocation, latestActivityType, latestActivityDurationSeconds, friendSharesLiveLocation, friendSharesTimeline`. Only offer friends with `friendSharesLiveLocation == true` for import. |
 | *(card only, not polled by the coordinator)* One friend's current location | `GET /api/friends/{friendId}/location` | Path param is the friend's user id (UUID). `data` is a `GpsPointPathPointDTO`: `id, longitude, latitude, timestamp, accuracy, altitude, velocity, userId, sourceType`. No battery. |
 | *(card only, not polled by the coordinator)* Recent history for all friends | `GET /api/friends/location/trails?minutes=N&endTime=<ISO>` | `N` required, server-validated `1 <= N <= 1440` (max 24h lookback), `endTime` optional (defaults to now). `data` is `{"<friendId>": [GpsPointPathPointDTO, ...], ...}` — a real rolling-window trail per friend. Only covers friends currently sharing live location. Reserved for §7's map card, not the import coordinator — see §4. |

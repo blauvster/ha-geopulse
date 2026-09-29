@@ -252,7 +252,13 @@ class GeoPulseClient:
         points = data.get("data") if isinstance(data, dict) else data
         if not points:
             return None
-        return GpsPoint.from_dict(points[0])
+        point = GpsPoint.from_dict(points[0])
+        # The server drops a sourceTypes value it doesn't recognise (logs a
+        # warning, filters nothing), which would hand back another source's
+        # latest point. Never attribute that to this source type.
+        if point.source_type != source_type:
+            return None
+        return point
 
     async def async_get_friends(self) -> list[Friend]:
         """List friends, each carrying an embedded last-known position."""

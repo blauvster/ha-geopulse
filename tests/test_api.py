@@ -151,7 +151,7 @@ async def test_get_latest_point_for_source_type_unwraps_page_envelope(geopulse_s
             }
         )
 
-    geopulse_server.route("GET", "/api/gps/points", handler)
+    geopulse_server.route("GET", "/api/gps", handler)
     client, test_client = await make_client(geopulse_server)
     try:
         point = await client.async_get_latest_point_for_source_type("OWNTRACKS")
@@ -370,3 +370,27 @@ async def test_unexpected_shape_raises_api_error(geopulse_server):
             await client.async_get_source_configs()
     finally:
         await test_client.close()
+
+
+async def test_latest_point_ignores_other_source_type(geopulse_server):
+    """An unrecognised sourceTypes filter is dropped server-side; don't trust it."""
+
+    async def handler(request: web.Request) -> web.Response:
+        point = {
+            "id": 3,
+            "timestamp": "2026-09-21T12:05:00Z",
+            "coordinates": {"lat": 1.0, "lng": 2.0},
+            "sourceType": "OWNTRACKS",
+        }
+        return web.json_response(
+            {"status": "success", "message": None, "data": {"data": [point], "pagination": {}}}
+        )
+
+    geopulse_server.route("GET", "/api/gps", handler)
+    client, test_client = await make_client(geopulse_server)
+    try:
+        point = await client.async_get_latest_point_for_source_type("TRACCAR")
+    finally:
+        await test_client.close()
+
+    assert point is None

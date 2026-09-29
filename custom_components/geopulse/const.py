@@ -22,7 +22,9 @@ SOURCE_TYPE_MOBILE_APP = "MOBILE_APP"
 # API paths, confirmed against backend source (see Plan.md §12).
 API_PATH_GPS_SOURCE = "/api/gps/source/"
 API_PATH_GPS_LAST_KNOWN_POSITION = "/api/gps/last-known-position"
-API_PATH_GPS_POINTS = "/api/gps/points"
+# Paginated point list. Not /api/gps/points - that path is POST-only (mobile
+# app ingest) and answers GET with 405; verified against a live server.
+API_PATH_GPS_POINTS = "/api/gps"
 API_PATH_FRIENDS = "/api/friends"
 API_PATH_FRIEND_LOCATION = "/api/friends/{friend_id}/location"
 API_PATH_FRIENDS_LOCATION_TRAILS = "/api/friends/location/trails"
