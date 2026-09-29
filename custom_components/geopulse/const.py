@@ -51,6 +51,9 @@ CONF_EXPORT_ENTITY_TOKENS = "export_entity_tokens"
 CONF_EXPORT_RETRY_QUEUE = "export_retry_queue"
 CONF_POLL_INTERVAL = "poll_interval"
 CONF_RECORDER_EXCLUDE = "recorder_exclude"
+# HA user ids allowed to use the timeline card; empty = every logged-in user.
+# Administrators are always allowed.
+CONF_TIMELINE_USERS = "timeline_users"
 
 DEFAULT_POLL_INTERVAL_SECONDS = 45
 MIN_POLL_INTERVAL_SECONDS = 10

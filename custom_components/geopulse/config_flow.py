@@ -51,6 +51,7 @@ from .const import (
     CONF_POLL_INTERVAL,
     CONF_READ_TOKEN,
     CONF_RECORDER_EXCLUDE,
+    CONF_TIMELINE_USERS,
     DEFAULT_POLL_INTERVAL_SECONDS,
     DOMAIN,
     MAX_POLL_INTERVAL_SECONDS,
@@ -302,7 +303,35 @@ class _DeviceIdSteps:
         }
 
 
-def _settings_schema(options: Mapping[str, Any]) -> vol.Schema:
+async def _ha_user_options(
+    hass: HomeAssistant, selected: list[str]
+) -> list[SelectOptionDict]:
+    """People who can log in to HA, for the timeline viewer list.
+
+    There's no user selector for config flows, so this lists HA's own user
+    accounts. Ids no longer matching a user stay selectable for removal.
+    """
+    users = [
+        user
+        for user in await hass.auth.async_get_users()
+        if user.is_active and not user.system_generated
+    ]
+    options = [
+        SelectOptionDict(value=user.id, label=user.name or user.id)
+        for user in sorted(users, key=lambda u: (u.name or "").lower())
+    ]
+    known = {user.id for user in users}
+    options += [
+        SelectOptionDict(value=user_id, label=f"{user_id} (removed user)")
+        for user_id in selected
+        if user_id not in known
+    ]
+    return options
+
+
+def _settings_schema(
+    options: Mapping[str, Any], user_options: list[SelectOptionDict]
+) -> vol.Schema:
     return vol.Schema(
         {
             vol.Required(
@@ -320,6 +349,13 @@ def _settings_schema(options: Mapping[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_RECORDER_EXCLUDE, default=options.get(CONF_RECORDER_EXCLUDE, True)
             ): BooleanSelector(),
+            vol.Optional(
+                CONF_TIMELINE_USERS, default=options.get(CONF_TIMELINE_USERS, [])
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=user_options, multiple=True, mode=SelectSelectorMode.LIST
+                )
+            ),
         }
     )
 
@@ -595,9 +631,15 @@ class GeoPulseOptionsFlow(OptionsFlowWithReload):
                     **self.config_entry.options,
                     CONF_POLL_INTERVAL: int(user_input[CONF_POLL_INTERVAL]),
                     CONF_RECORDER_EXCLUDE: user_input[CONF_RECORDER_EXCLUDE],
+                    CONF_TIMELINE_USERS: list(user_input.get(CONF_TIMELINE_USERS, [])),
                 }
             )
 
+        options = self.config_entry.options
         return self.async_show_form(
-            step_id="settings", data_schema=_settings_schema(self.config_entry.options)
+            step_id="settings",
+            data_schema=_settings_schema(
+                options,
+                await _ha_user_options(self.hass, options.get(CONF_TIMELINE_USERS, [])),
+            ),
         )

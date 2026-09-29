@@ -248,8 +248,15 @@ their timeline, each in the colour GeoPulse assigns.
   gaps and map path segments. Queried live, on demand; nothing is cached
   or recorded in HA (consistent with §4/§6).
 - **Backend proxy:** websocket command `geopulse/timeline {start_date,
-  end_date, entry_id?}`. The read token stays server-side. **Admin-only**,
-  because that token grants full access to the GeoPulse account (§9).
+  end_date, entry_id?, user_ids?}` (plus `geopulse/users` for the card
+  editor). The read token stays server-side — verified: none of the
+  entry's tokens appear in anything the browser can fetch. Viewing is
+  governed separately, because that token grants full access to the
+  account's history (§9): an optional *Timeline card viewers* list of HA
+  users (entry option `timeline_users`). Empty (default) = every logged-in
+  HA user — the owner's decision for a household setup; otherwise only
+  those users plus administrators. (First built admin-only; changed on
+  review.)
   Dates are whole days in HA's time zone, resolved server-side; ranges
   are capped at 31 days. The response is trimmed to what the card draws
   (`[lat, lng]` path points, a few fields per stay/trip): ~13× smaller
@@ -260,7 +267,22 @@ their timeline, each in the colour GeoPulse assigns.
   to vendor. Dark mode dims OSM tiles with a CSS filter. `tile_url` /
   `tile_attribution` point it at another raster tile server.
 - **Security:** location names etc. are rendered with `textContent` /
-  escaped tooltips, never raw HTML.
+  escaped tooltips, never raw HTML; person colours are passed through only
+  if they're hex (`#rgb…#rrggbbaa`), since they end up in styles/markup.
+- **Layout:** `sections` (which parts, in order) and `layout` (auto /
+  stacked / columns; auto = side by side from 700 px card width). Fills
+  the height when HA sets `layout = "panel"`, or `"grid"` with explicit
+  `grid_options.rows`; `getGridOptions()` gives full width by default.
+- **Now markers:** for ranges reaching the present, the proxy also fetches
+  `last-known-position` (owner) and `/api/friends` (friends sharing *live
+  location*), best-effort, and attaches `current {location, time}`; the
+  card auto-refreshes (default 120 s, min 30 s) without refitting the map.
+  Markers within 20 px on screen are grouped (split-colour ring + count,
+  tooltip lists everyone), regrouped on every zoom.
+- **Colours:** GeoPulse assigns `assignedColor` from a fixed 10-colour
+  palette by position in its people list (friends sharing, then the owner
+  last), so they aren't stable. The card's `colors: {user_id: "#hex"}`
+  overrides them (validated hex); editor has a colour picker per person.
 
 ---
 

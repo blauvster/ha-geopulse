@@ -223,10 +223,38 @@ we add an optional per-entity battery sensor mapping.
 - [x] Research: `GET /api/streaming-timeline/multi-user` returns stays,
       trips, gaps *and* path segments for the owner plus every friend
       sharing their timeline in one call (Plan.md §12); live-verified.
-- [x] Backend proxy (`timeline.py`): websocket `geopulse/timeline`,
-      admin-only, whole days in HA's time zone, ≤31 days, trimmed payload
-      (~13× smaller). Errors: `invalid_range`, `not_found`,
-      `unauthorized`, `geopulse_unavailable`.
+- [x] Backend proxy (`timeline.py`): websocket `geopulse/timeline`
+      (+ `geopulse/users` for the editor), whole days in HA's time zone,
+      ≤31 days, trimmed payload (~13× smaller), optional `user_ids`
+      filter (applied in HA: GeoPulse's own `userIds` 403s the whole
+      request if one listed friend stopped sharing). Access: *Timeline card
+      viewers* option — empty = every logged-in user, else those users +
+      admins (was admin-only). Errors: `invalid_range`, `not_found`,
+      `unauthorized` (HA permission), `geopulse_auth_failed`,
+      `geopulse_unavailable`.
+- [x] Visual editor (`geopulse-card-editor`, HA `ha-form`): people to show
+      and hidden by default (names from `geopulse/users`), default range
+      (today / yesterday / last 7 / last 30 / last N days), section toggles
+      (filters, map, list), map height and tiles, entry. Saves minimal YAML.
+- [x] Layout: `sections` (reorderable: which parts, in order) + `layout`
+      (auto/stacked/columns); fills panel views and sized sections-view
+      cells. Checked in headless Chromium at narrow/wide/panel sizes (a
+      stand-in `ha-card` with inline `display:block` first made the fill
+      look broken — harness bug, not card).
+- [x] "Now" markers per person when the range includes today, plus
+      auto-refresh; colours hex-validated server-side. First render showed
+      hollow rings — a `.dot` class clash with the people chips.
+- [x] Per-person colour overrides (`colors`) with editor pickers, and
+      grouped "now" markers for people at the same spot. Fixed along the
+      way: now-markers had `position: relative`, overriding Leaflet's
+      absolute positioning — every marker after the first (friends) was
+      pushed 14 px down, which looked like zoom-dependent drift (measured
+      before/after). Full-screen panels now measure their height (HA's
+      `height: 100%` chain isn't definite there), so the list scrolls.
+- [x] OSM tiles send the origin as Referer (`referrerPolicy: origin`):
+      HA pages are `Referrer-Policy: no-referrer`, and OSM serves "Access
+      blocked" tiles without one — reported from the real dashboard;
+      headless Chromium didn't reproduce it (OSM treats it differently).
 - [x] Card (`frontend/geopulse-card.js`, no build step): Today /
       Yesterday / 7 days, date pickers with prev/next, per-person toggle
       chips with distance, map (paths + stay markers with tooltips, fit to
@@ -278,7 +306,7 @@ we add an optional per-entity battery sensor mapping.
 
 ## Current status
 
-All phases done; 99 tests passing in Docker (`docker/run-tests.sh`),
+All phases done; 112 tests passing in Docker (`docker/run-tests.sh`),
 hassfest clean. Import, export (two accounts) and the card are verified
 live against a production GeoPulse. Remaining: README screenshots and the
 first release.

@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from freezegun.api import FrozenDateTimeFactory
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.geopulse.api import GeoPulseApiError, GeoPulseAuthError
@@ -15,6 +16,7 @@ from custom_components.geopulse.const import (
     CONF_BASE_URL,
     CONF_IMPORT_AGGREGATE_ACCOUNT,
     CONF_READ_TOKEN,
+    CONF_TIMELINE_USERS,
     DOMAIN,
 )
 from custom_components.geopulse.timeline import (
@@ -24,7 +26,7 @@ from custom_components.geopulse.timeline import (
     slim_timeline,
 )
 
-from .conftest import USER_ID
+from .conftest import USER_ID, friend, gps_point
 
 pytestmark = pytest.mark.usefixtures("socket_enabled")
 
@@ -106,12 +108,15 @@ def test_slim_timeline_empty() -> None:
     assert slim_timeline({}) == {"people": []}
 
 
-async def setup_entry(hass: HomeAssistant) -> MockConfigEntry:
+async def setup_entry(hass: HomeAssistant, viewers: list[str] | None = None) -> MockConfigEntry:
+    options: dict[str, Any] = {CONF_IMPORT_AGGREGATE_ACCOUNT: True}
+    if viewers is not None:
+        options[CONF_TIMELINE_USERS] = viewers
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id=USER_ID,
         data={CONF_BASE_URL: "http://geopulse.local", CONF_READ_TOKEN: "read"},
-        options={CONF_IMPORT_AGGREGATE_ACCOUNT: True},
+        options=options,
     )
     entry.add_to_hass(hass)
     await hass.config_entries.async_setup(entry.entry_id)
@@ -175,24 +180,56 @@ async def test_ws_timeline_invalid_range(
     mock_api.async_get_multi_user_timeline.assert_not_called()
 
 
-async def test_ws_timeline_requires_admin(
+async def test_ws_timeline_open_to_all_users_by_default(
     hass: HomeAssistant,
     mock_api: MagicMock,
     hass_ws_client: Any,
     hass_read_only_access_token: str,
 ) -> None:
-    """The proxy's token grants full GeoPulse account access."""
-    mock_api.async_get_multi_user_timeline = AsyncMock()
+    """No viewer list: anyone logged in, even a read-only user."""
+    mock_api.async_get_multi_user_timeline = AsyncMock(return_value=multi_user_response())
     await setup_entry(hass)
     client = await hass_ws_client(hass, hass_read_only_access_token)
     reply = await call(client, start_date="2026-09-29", end_date="2026-09-29")
-    assert reply["error"]["code"] == "unauthorized"
-    mock_api.async_get_multi_user_timeline.assert_not_called()
+    assert reply["success"], reply
+
+
+@pytest.mark.parametrize(
+    ("listed", "admin", "allowed"),
+    [
+        (False, False, False),  # on neither -> blocked
+        (True, False, True),  # listed non-admin -> allowed
+        (False, True, True),  # admins always allowed
+    ],
+)
+async def test_ws_timeline_viewer_list(
+    hass: HomeAssistant,
+    mock_api: MagicMock,
+    hass_ws_client: Any,
+    hass_read_only_user: Any,
+    hass_read_only_access_token: str,
+    hass_access_token: str,
+    listed: bool,
+    admin: bool,
+    allowed: bool,
+) -> None:
+    mock_api.async_get_multi_user_timeline = AsyncMock(return_value=multi_user_response())
+    await setup_entry(hass, viewers=[hass_read_only_user.id] if listed else ["someone-else"])
+    client = await hass_ws_client(hass, hass_access_token if admin else hass_read_only_access_token)
+    reply = await call(client, start_date="2026-09-29", end_date="2026-09-29")
+    assert reply["success"] is allowed, reply
+    if not allowed:
+        assert reply["error"]["code"] == "unauthorized"
+        mock_api.async_get_multi_user_timeline.assert_not_called()
 
 
 @pytest.mark.parametrize(
     ("side_effect", "code"),
-    [(GeoPulseAuthError("x"), "unauthorized"), (GeoPulseApiError("down"), "geopulse_unavailable")],
+    [
+        # Distinct from HA's own "unauthorized", so the card can say which.
+        (GeoPulseAuthError("x"), "geopulse_auth_failed"),
+        (GeoPulseApiError("down"), "geopulse_unavailable"),
+    ],
 )
 async def test_ws_timeline_geopulse_errors(
     hass: HomeAssistant, mock_api: MagicMock, hass_ws_client: Any, side_effect: Exception, code: str
@@ -230,3 +267,96 @@ async def test_register_card(hass: HomeAssistant) -> None:
     assert paths[0].path.endswith("custom_components/geopulse/frontend")
     url = add_js.call_args.args[1]
     assert url.startswith(f"{FRONTEND_URL}/{CARD_FILE}?v=")  # cache-busted
+
+
+async def test_ws_timeline_user_filter(
+    hass: HomeAssistant, mock_api: MagicMock, hass_ws_client: Any
+) -> None:
+    mock_api.async_get_multi_user_timeline = AsyncMock(return_value=multi_user_response())
+    await setup_entry(hass)
+    client = await hass_ws_client(hass)
+    reply = await call(client, start_date="2026-09-29", end_date="2026-09-29", user_ids=[FRIEND_ID])
+    assert [p["user_id"] for p in reply["result"]["people"]] == [FRIEND_ID]
+    # Empty list = no filter.
+    reply = await call(client, start_date="2026-09-29", end_date="2026-09-29", user_ids=[])
+    assert len(reply["result"]["people"]) == 2
+
+
+async def test_ws_users(hass: HomeAssistant, mock_api: MagicMock, hass_ws_client: Any) -> None:
+    mock_api.async_get_multi_user_timeline = AsyncMock(return_value=multi_user_response())
+    await setup_entry(hass)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "geopulse/users"})
+    reply = await client.receive_json()
+    assert reply["result"] == {
+        "users": [
+            {"user_id": USER_ID, "name": "me@example.com", "color": "#F59E0B", "is_self": True},
+            {"user_id": FRIEND_ID, "name": "Alex", "color": "#10B981", "is_self": False},
+        ]
+    }
+    start, end = mock_api.async_get_multi_user_timeline.call_args.args
+    assert (end - start).total_seconds() == 60  # tiny window: names only
+
+
+async def test_ws_users_follows_viewer_list(
+    hass: HomeAssistant, mock_api: MagicMock, hass_ws_client: Any, hass_read_only_access_token: str
+) -> None:
+    mock_api.async_get_multi_user_timeline = AsyncMock()
+    await setup_entry(hass, viewers=["someone-else"])
+    client = await hass_ws_client(hass, hass_read_only_access_token)
+    await client.send_json_auto_id({"type": "geopulse/users"})
+    assert (await client.receive_json())["error"]["code"] == "unauthorized"
+    mock_api.async_get_multi_user_timeline.assert_not_called()
+
+
+async def test_ws_timeline_current_positions(
+    hass: HomeAssistant, mock_api: MagicMock, hass_ws_client: Any, freezer: FrozenDateTimeFactory
+) -> None:
+    """Ranges reaching now get each person's current position."""
+    await hass.config.async_set_time_zone("Europe/London")
+    mock_api.async_get_multi_user_timeline = AsyncMock(return_value=multi_user_response())
+    mock_api.async_get_last_known_position.return_value = gps_point(lat=51.5, lng=-0.12)
+    await setup_entry(hass)
+    client = await hass_ws_client(hass)
+    freezer.move_to("2026-09-29T14:00:00+01:00")
+    alex = friend(FRIEND_ID, "Alex")  # shares live location, at (1.0, 2.0)
+    mock_api.async_get_friends.return_value = [alex]
+
+    reply = await call(client, start_date="2026-09-28", end_date="2026-09-29")
+    me, other = reply["result"]["people"]
+    assert reply["result"]["includes_now"] is True
+    assert me["current"] == {"location": [51.5, -0.12], "time": "2026-09-29T12:00:00+00:00"}
+    assert other["current"] == {"location": [1.0, 2.0], "time": "2026-09-29T11:00:00Z"}
+
+    # A past range: no "now" markers, and no extra GeoPulse calls.
+    mock_api.async_get_friends.reset_mock()
+    reply = await call(client, start_date="2026-09-20", end_date="2026-09-21")
+    assert reply["result"]["includes_now"] is False
+    assert all("current" not in p for p in reply["result"]["people"])
+    mock_api.async_get_friends.assert_not_called()
+
+
+async def test_ws_timeline_current_positions_best_effort(
+    hass: HomeAssistant, mock_api: MagicMock, hass_ws_client: Any
+) -> None:
+    """Friends not sharing live location, or a failing call, just mean no marker."""
+    mock_api.async_get_multi_user_timeline = AsyncMock(return_value=multi_user_response())
+    await setup_entry(hass)
+    mock_api.async_get_last_known_position.side_effect = GeoPulseApiError("down")
+    mock_api.async_get_friends.return_value = [friend(FRIEND_ID, "Alex", shares=False)]
+    client = await hass_ws_client(hass)
+    today = dt_util.now().date().isoformat()
+    reply = await call(client, start_date=today, end_date=today)
+    assert reply["success"], reply
+    assert all("current" not in p for p in reply["result"]["people"])
+
+
+@pytest.mark.parametrize(
+    ("color", "expected"),
+    [("#10B981", "#10B981"), ("red;background:url(x)", "#3B82F6"), (None, "#3B82F6"), ("#1234", "#1234")],
+)
+def test_slim_timeline_sanitizes_colors(color: Any, expected: str) -> None:
+    data = multi_user_response()
+    data["timelines"][0]["assignedColor"] = color
+    alex = next(p for p in slim_timeline(data)["people"] if not p["is_self"])
+    assert alex["color"] == expected

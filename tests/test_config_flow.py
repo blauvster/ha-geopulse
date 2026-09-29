@@ -24,6 +24,7 @@ from custom_components.geopulse.const import (
     CONF_POLL_INTERVAL,
     CONF_READ_TOKEN,
     CONF_RECORDER_EXCLUDE,
+    CONF_TIMELINE_USERS,
     DEFAULT_POLL_INTERVAL_SECONDS,
     DOMAIN,
 )
@@ -438,6 +439,28 @@ async def test_options_settings(hass: HomeAssistant, mock_client: MagicMock) -> 
     assert entry.options[CONF_POLL_INTERVAL] == 120
     assert entry.options[CONF_RECORDER_EXCLUDE] is False
     assert entry.options[CONF_IMPORT_AGGREGATE_ACCOUNT] is True
+
+
+async def test_options_timeline_viewers(hass: HomeAssistant, mock_client: MagicMock) -> None:
+    alex = await hass.auth.async_create_user("Alex")
+    await hass.auth.async_create_system_user("Some add-on")
+    entry = make_entry(hass, **{CONF_TIMELINE_USERS: ["deleted-user-id"]})
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"next_step_id": "settings"}
+    )
+    options = schema_field(result, CONF_TIMELINE_USERS).config["options"]
+    labels = {o["value"]: o["label"] for o in options}
+    assert labels[alex.id] == "Alex"
+    assert "Some add-on" not in labels.values()  # system users can't log in
+    assert labels["deleted-user-id"] == "deleted-user-id (removed user)"
+
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {CONF_POLL_INTERVAL: 45, CONF_RECORDER_EXCLUDE: True, CONF_TIMELINE_USERS: [alex.id]},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_TIMELINE_USERS] == [alex.id]
 
 
 async def test_options_import_keeps_stale_selection(

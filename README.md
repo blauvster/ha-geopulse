@@ -85,33 +85,72 @@ choose them as an import.
 ## Timeline card
 
 The card is included in the integration and available on every dashboard —
-no extra resource to add. *Edit dashboard → Add card → GeoPulse timeline*,
-or in YAML:
+no extra resource to add. *Edit dashboard → Add card → GeoPulse timeline*.
+Everything can be set in the card's visual editor, or in YAML:
 
 ```yaml
 type: custom:geopulse-card
-title: Timeline        # optional
-days: 1                # initial range ending today, 1–31
-map_height: 320        # px
-# entry_id: ...        # only needed with more than one GeoPulse entry
+title: Timeline
+default_range: today     # today | yesterday | last_7_days | last_30_days | last_n_days
+# days: 3                # with last_n_days (1–31)
+users:                   # people to show; omit for everyone
+  - 6f1c…                # GeoPulse user ids (the editor lists names)
+hidden_users: []         # shown in the filters but switched off at first
+colors:                  # optional per-person colours; default: GeoPulse's
+  6f1c…: "#8B5CF6"
+sections: [filters, map, list]   # which parts to show, in this order
+layout: auto             # auto | stacked | columns (map and list side by side)
+map_height: 320          # px, unless the card fills a panel / sized grid cell
+show_current: true       # "now" marker per person when the range includes today
+pulse: auto              # auto (follows your device's reduce-motion setting) | always | off
+refresh_interval: 120    # s, auto-refresh while the range includes today; 0 = off
+# entry_id: ...          # only needed with more than one GeoPulse entry
 # tile_url: https://tiles.example.com/{z}/{x}/{y}.png
 # tile_attribution: "© My tiles"
 ```
 
-It shows you plus every friend who shares their **timeline** with you,
-each in their GeoPulse colour: paths and stays on the map, and a
-chronological list of stays, trips (with movement type, distance and
-duration) and gaps in the data. Tap a person to hide them; tap a list
-entry to find it on the map. Ranges go up to 31 days.
+It shows you plus every friend who shares their **timeline** with you
+(or just the `users` you pick), each in their GeoPulse colour: paths and
+stays on the map, and a chronological list of stays, trips (with movement
+type, distance and duration) and gaps in the data. Tap a person to hide
+them; tap a list entry to find it on the map. Ranges go up to 31 days.
+
+When the range includes today, a pulsing marker shows where each person is
+**now** — for friends, if they also share their *live location* with you —
+and the card refreshes itself every couple of minutes (your pan and zoom
+are kept). The pulse follows your device's *reduce motion* setting unless you set
+`pulse: always`. People at (or near) the same spot share one marker with
+a split-colour ring and a count; zoom in to separate them.
+
+**Colours** come from GeoPulse, which hands them out by position in its
+list of people — so they can shift when a friend starts or stops sharing.
+Set `colors` (or use *Colours* in the editor) to pin them; picking
+GeoPulse's colour again removes the override.
+
+**One card, small or full screen.** With `layout: auto` the map and list
+sit side by side once the card is at least 700 px wide, and stack
+otherwise. In a **panel** view — or a **sections** view where you've set
+the card's height (rows) — it fills the space: the map stretches and the
+list scrolls. `sections` sets which parts appear and their order; side by
+side, the map and list take the columns in that order and the filters span
+the top (or the bottom, if listed last).
 
 Maps use [OpenStreetMap](https://www.openstreetmap.org/) tiles by default,
 loaded by your browser, under OSM's
 [tile usage policy](https://operations.osmfoundation.org/policies/tiles/);
-for heavy use, point `tile_url` at another raster tile provider or your own.
+OSM's policy requires a `Referer` on tile requests, which Home Assistant's
+pages otherwise suppress, so the card sends your Home Assistant address
+(origin only, e.g. `http://homeassistant.local:8123/` — no page path) with
+OSM tile requests. For heavy use, or to avoid that, point `tile_url` at
+another raster tile provider or your own; no referrer is sent then.
 
-**Only Home Assistant administrators can use the card**: it reads history
-with your GeoPulse API token, which gives full access to your GeoPulse
-account. The token stays in Home Assistant; the browser never sees it.
+**Who can see it.** The card reads history through Home Assistant with
+your GeoPulse API token; the token stays in Home Assistant and the browser
+never sees it. But whoever can use the card sees everything that token can:
+your full location history and that of every friend sharing their timeline
+with you. By default that's **anyone who can log in to Home Assistant**. To
+limit it, pick users under *Configure → Settings → Timeline card viewers*;
+administrators are always allowed.
 
 ## Privacy and your data
 
@@ -177,8 +216,8 @@ account. The token stays in Home Assistant; the browser never sees it.
   ```
 - *Cannot connect*: check the URL from Home Assistant's point of view
   (container networking, reverse proxy path, http vs https).
-- The card says "Only Home Assistant administrators…": log in as an
-  administrator (see [Timeline card](#timeline-card)).
+- The card says "You don't have access…": that user isn't on the
+  *Timeline card viewers* list (see [Timeline card](#timeline-card)).
 - Export not arriving: check *Settings → Repairs* and the logs for
   "Export to GeoPulse … failed".
 

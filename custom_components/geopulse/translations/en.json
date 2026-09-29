@@ -105,10 +105,12 @@
         "title": "Settings",
         "data": {
           "poll_interval": "Poll interval",
-          "recorder_exclude": "Exclude imported trackers from the recorder"
+          "recorder_exclude": "Exclude imported trackers from the recorder",
+          "timeline_users": "Timeline card viewers"
         },
         "data_description": {
-          "recorder_exclude": "Keeps GeoPulse the only store of location history. Excluded entities also don't appear in the logbook or long-term statistics."
+          "recorder_exclude": "Keeps GeoPulse the only store of location history. Excluded entities also don't appear in the logbook or long-term statistics.",
+          "timeline_users": "Home Assistant users who may use the GeoPulse timeline card. Leave empty to allow everyone who can log in to Home Assistant. Administrators are always allowed. The card shows the full location history this GeoPulse account can see, including friends who share their timeline with it."
         }
       }
     },
