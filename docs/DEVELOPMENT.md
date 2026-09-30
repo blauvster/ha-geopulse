@@ -129,6 +129,15 @@ It's class-level, hence two tracker classes selected by the
 - **Delivery:** HACS can't install one repo as both an integration and a
   dashboard plugin, so the integration serves the card and registers it on
   every dashboard (`add_extra_js_url`, cache-busted by content hash).
+- **Registration timing:** extra modules are imported in parallel with HA's
+  app, and HA replaces `window.customElements` with its own registry while
+  it boots. A card that defines itself first lands in the browser's
+  registry, which HA never consults — "Custom element doesn't exist",
+  permanently for that page load. The card therefore waits for
+  `<home-assistant>` to be defined when `window.latestJS` shows HA is
+  booting, and registers synchronously otherwise. Found on a production
+  instance (0/8 loads when the script is served instantly, 8/8 with the
+  fix); the dev instance rarely lost the race.
 
 ## GeoPulse API
 

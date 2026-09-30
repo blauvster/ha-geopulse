@@ -5,6 +5,15 @@ Versions follow [Semantic Versioning](https://semver.org/). The version in
 declares the same one; a test keeps them in sync). Releases are GitHub
 releases tagged `vX.Y.Z`, which is what HACS installs.
 
+## 0.1.1 — 2026-09-29
+
+- **Fix:** the timeline card could fail to load with "Custom element
+  doesn't exist: geopulse-card" — intermittently, and more often with a
+  warm browser cache. The card could register itself before Home
+  Assistant's frontend had set up its own custom-element registry, which
+  then never saw it. The card now waits for Home Assistant to boot before
+  registering.
+
 ## 0.1.0 — 2026-09-29
 
 First release.

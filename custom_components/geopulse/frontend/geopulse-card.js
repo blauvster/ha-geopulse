@@ -31,7 +31,7 @@
  */
 
 const BASE = "/geopulse_frontend";
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 const MAX_DAYS = 31;
 // OpenStreetMap's standard raster tiles - what HA's own frontend falls back
 // to. (CARTO's basemaps now return "API key required" placeholder tiles.)
@@ -1120,12 +1120,12 @@ class GeoPulseCardEditor extends HTMLElement {
   }
 }
 
-if (!customElements.get("geopulse-card-editor")) {
-  customElements.define("geopulse-card-editor", GeoPulseCardEditor);
-}
-
-if (!customElements.get("geopulse-card")) {
-  customElements.define("geopulse-card", GeoPulseCard);
+function registerElements() {
+  // Always the current global: see whenHomeAssistantBooted().
+  const registry = window.customElements;
+  if (!registry.get("geopulse-card-editor")) registry.define("geopulse-card-editor", GeoPulseCardEditor);
+  if (registry.get("geopulse-card")) return;
+  registry.define("geopulse-card", GeoPulseCard);
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "geopulse-card",
@@ -1136,3 +1136,26 @@ if (!customElements.get("geopulse-card")) {
   });
   console.info(`%c GEOPULSE-CARD %c ${VERSION} `, "background:#0f766e;color:#fff", "");
 }
+
+// Home Assistant's frontend installs its own custom-element registry while it
+// boots (window.customElements is replaced). The integration loads this file
+// as an "extra module" in parallel with HA's app, so it can run *first*: a
+// definition made then lands in the browser's registry, HA's registry never
+// sees it, and dashboards show "Custom element doesn't exist" for good -
+// intermittently, depending on which script wins the race. So during HA's
+// boot, wait until its root element is defined (its registry is in place by
+// then). HA's page sets window.latestJS just before importing extra modules,
+// which tells us we're in that boot; anywhere else (HA already running, or not
+// HA at all) register synchronously. The timeout is a last resort so the card
+// can never end up unregistered; registerElements() is idempotent.
+function registerWhenReady() {
+  const booting = "latestJS" in window || document.querySelector("home-assistant");
+  if (!booting || window.customElements.get("home-assistant")) {
+    registerElements();
+    return;
+  }
+  window.customElements.whenDefined("home-assistant").then(registerElements);
+  setTimeout(registerElements, 10000);
+}
+
+registerWhenReady();
